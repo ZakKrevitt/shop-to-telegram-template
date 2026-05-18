@@ -2,43 +2,43 @@
   {
     "id": "p1",
     "name": "Minimalist Desk Lamp",
-    "title": "Minimalist Desk Lamp",
     "description": "Elegant LED lamp with adjustable brightness and warm color temperature. Perfect for late-night coding.",
-    "price": "$89.00",
+    "price": 89.0,
     "currency": "USD",
-    "image": "https://images.unsplash.com/photo-1534073828943-f801091bb18c",
     "image_url": "https://images.unsplash.com/photo-1534073828943-f801091bb18c",
     "url": "https://example.com/products/lamp",
-    "tags": ["lighting", "minimalist", "office"],
-    "categories": ["lighting"],
-    "variant_id": "123456789"
+    "tags": [
+      "lighting",
+      "minimalist",
+      "office"
+    ]
   },
   {
     "id": "p2",
     "name": "Ergonomic Walnut Stand",
-    "title": "Ergonomic Walnut Stand",
     "description": "Hand-crafted walnut wood laptop stand. Improves posture and reclaim desk space.",
-    "price": "$120.00",
+    "price": 120.0,
     "currency": "USD",
-    "image": "https://images.unsplash.com/photo-1527443224154-c4a3942d3acf",
     "image_url": "https://images.unsplash.com/photo-1527443224154-c4a3942d3acf",
     "url": "https://example.com/products/stand",
-    "tags": ["accessories", "wood", "ergonomic"],
-    "categories": ["accessories"],
-    "variant_id": "987654321"
+    "tags": [
+      "accessories",
+      "wood",
+      "ergonomic"
+    ]
   },
   {
     "id": "p3",
     "name": "Mechanical Keyboard",
-    "title": "Mechanical Keyboard",
     "description": "Compact 65% layout with hot-swappable switches and PBT keycaps. Tactile and satisfying.",
-    "price": "$150.00",
+    "price": 150.0,
     "currency": "USD",
-    "image": "https://images.unsplash.com/photo-1511467687858-23d96c32e4ae",
     "image_url": "https://images.unsplash.com/photo-1511467687858-23d96c32e4ae",
     "url": "https://example.com/products/keyboard",
-    "tags": ["tech", "peripheral", "keyboard"],
-    "categories": ["tech"],
-    "variant_id": "456789123"
+    "tags": [
+      "tech",
+      "peripheral",
+      "keyboard"
+    ]
   }
 ]
