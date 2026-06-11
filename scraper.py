@@ -37,11 +37,12 @@ CURRENCY_SYMBOLS = {
 
 
 CATEGORY_RULES = [
-    ("books-media", "Books & Media", ["book", "buch", "albert hofmann", "lucys", "fear and loathing", "high cuisine", "plant magic", "future is fungi", "mushroom people"]),
+    ("books-media", "Books & Media", ["book", "buch", "albert hofmann", "lucys", "fear and loathing", "high cuisine", "plant magic", "future is fungi", "mushroom people", "alice", "wonderland", "breaking open the head", "daniel pinchbeck"]),
     ("cbd-hemp", "CBD & Hemp", ["cbd", "hemp", "hhc", "10hc", "pre-roll", "pot-pourri"]),
     ("functional-mushrooms", "Functional Mushrooms", ["cordyceps", "shiitake", "lion", "lions mane", "reishi", "chaga", "mushroom extract"]),
-    ("set-setting", "Set & Setting", ["candle", "pipe", "palo santo", "smudge", "sage", "pine", "set-setting", "home", "incense"]),
-    ("botanical-extracts", "Botanical Extracts", ["kanna", "mulungu", "blue lotus", "rapé", "rape", "kratom", "rockrose", "plant extract", "pflanzenextrakt"]),
+    ("botanical-extracts", "Botanical Extracts", ["kanna", "mulungu", "blue lotus", "rapé", "rape", "kratom", "rockrose"]),
+    ("set-setting", "Set & Setting", ["candle", "pipe", "palo santo", "smudge", "sage", "pine", "set-setting", "home", "incense", "lighting"]),
+    ("research-extracts", "Research Extracts", ["supplement", "extract", "tincture", "tablet", "capsule", "powder", "liquid", "amanita", "mamba", "pflanzenextrakt", "plant extract"]),
 ]
 
 
@@ -103,8 +104,10 @@ def infer_product_category(title: str, description: str = "", tags: Optional[Lis
         if any(keyword in text for keyword in keywords):
             return slug
     if product_type:
-        return _slug(product_type, "products")
-    return "botanical-extracts"
+        category = _slug(product_type, "products")
+        if category != "products":
+            return category
+    return "research-extracts"
 
 
 def _absolute_url(base_url: str, value: Any) -> str:

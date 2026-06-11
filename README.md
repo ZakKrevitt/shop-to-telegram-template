@@ -103,6 +103,8 @@ python scraper.py https://merchant-shop.com --output products.json --sections-ou
 
 The scraper tries Shopify's public `products.json` endpoint first, then falls back to product metadata on the provided page. If no products are detected, edit `products.json` manually or try a more specific collection/product URL.
 
+Default supplement/extract category buckets are Botanical Extracts, CBD & Hemp, Functional Mushrooms, Set & Setting, Books & Guides, and Research Extracts. Research Extracts is the fallback for non-restricted supplement/extract items that do not clearly fit another bucket.
+
 ## Safety guardrails
 
 The template does not rename restricted products to bypass platform rules. It keeps the scraped source catalog auditable, then filters restricted/research-compound keyword matches out of Telegram category menus, search, product detail, variant selection, cart, and checkout callbacks. If any restricted products are detected, the broad start-menu store link is hidden; product-specific source-store links remain available only for visible products.

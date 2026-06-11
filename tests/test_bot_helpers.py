@@ -48,7 +48,7 @@ def test_books_with_restricted_terms_are_allowed_as_media():
     assert bot._is_restricted_product(product) is False
 
 
-def test_german_category_alias_maps_to_english_label():
+def test_german_extract_category_uses_product_spirit_first():
     product = Product(
         id="3",
         name="Kanna Extract",
@@ -60,6 +60,20 @@ def test_german_category_alias_maps_to_english_label():
 
     assert bot._category_for_product(product) == "botanical-extracts"
     assert bot._category_label("botanical-extracts", "en") == "🌿 Botanical Extracts"
+
+
+def test_uncategorized_supplement_falls_into_research_extracts():
+    product = Product(
+        id="3b",
+        name="Amanita Muscaria Tincture",
+        title="Amanita Muscaria Tincture",
+        description="A liquid supplement extract.",
+        price="€18.00",
+        categories=["products"],
+    )
+
+    assert bot._category_for_product(product) == "research-extracts"
+    assert bot._category_label("research-extracts", "en") == "🧪 Research Extracts"
 
 
 def test_product_card_text_separates_name_price_description_and_options():

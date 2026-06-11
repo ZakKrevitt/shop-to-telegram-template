@@ -82,13 +82,10 @@ CATEGORY_LABELS = {
     "cbd-hemp": {"en": "🌱 CBD & Hemp", "de": "🌱 CBD & Hemp"},
     "set-setting": {"en": "🕯️ Set & Setting", "de": "🕯️ Set & Setting"},
     "books-media": {"en": "📚 Books & Guides", "de": "📚 Books & Guides"},
+    "research-extracts": {"en": "🧪 Research Extracts", "de": "🧪 Research Extracts"},
 }
 
 CATEGORY_ALIASES = {
-    "pflanzenextrakt": "botanical-extracts",
-    "pflanzenextrakte": "botanical-extracts",
-    "plant-extract": "botanical-extracts",
-    "plant-extracts": "botanical-extracts",
     "botanical-extract": "botanical-extracts",
     "botanical-extracts": "botanical-extracts",
     "mushrooms": "functional-mushrooms",
@@ -98,9 +95,14 @@ CATEGORY_ALIASES = {
     "hemp": "cbd-hemp",
     "home": "set-setting",
     "home-goods": "set-setting",
+    "lighting": "set-setting",
     "set-setting": "set-setting",
     "books": "books-media",
     "books-media": "books-media",
+    "research-extract": "research-extracts",
+    "research-extracts": "research-extracts",
+    "supplement": "research-extracts",
+    "supplements": "research-extracts",
 }
 
 LANGUAGE_OPTIONS = {
@@ -246,7 +248,7 @@ def _product_text(product) -> str:
 
 def _is_book_or_media(product) -> bool:
     text = _product_text(product)
-    return any(keyword in text for keyword in ["book", "buch", "albert hofmann", "lucys", "fear and loathing", "plant magic", "future is fungi", "mushroom people"])
+    return any(keyword in text for keyword in ["book", "buch", "albert hofmann", "lucys", "fear and loathing", "plant magic", "future is fungi", "mushroom people", "alice", "wonderland", "breaking open the head", "daniel pinchbeck"])
 
 
 def _is_restricted_product(product) -> bool:
@@ -266,8 +268,9 @@ def _category_for_product(product) -> str:
         for cat in (product.categories or [])
         if cat and _normalize_category(cat) != "products"
     ]
-    if categories:
-        return categories[0]
+    for category in categories:
+        if category in CATEGORY_LABELS:
+            return category
 
     text = _product_text(product)
     if any(keyword in text for keyword in ["cbd", "hemp", "hhc", "10hc", "pre-roll", "pot-pourri"]):
@@ -276,9 +279,13 @@ def _category_for_product(product) -> str:
         return "functional-mushrooms"
     if _is_book_or_media(product):
         return "books-media"
-    if any(keyword in text for keyword in ["candle", "pipe", "palo santo", "smudge", "sage", "pine", "set-setting"]):
+    if any(keyword in text for keyword in ["kanna", "mulungu", "blue lotus", "rapé", "rape", "kratom", "rockrose"]):
+        return "botanical-extracts"
+    if any(keyword in text for keyword in ["candle", "pipe", "palo santo", "smudge", "sage", "pine", "set-setting", "lighting"]):
         return "set-setting"
-    return "botanical-extracts"
+    if any(keyword in text for keyword in ["supplement", "extract", "tincture", "tablet", "capsule", "powder", "liquid", "amanita", "mamba", "pflanzenextrakt", "plant extract"]):
+        return "research-extracts"
+    return "research-extracts"
 
 
 VISIBLE_PRODUCT_INDEXES = [idx for idx, product in enumerate(products) if not _is_restricted_product(product)]
