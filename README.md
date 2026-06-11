@@ -19,7 +19,7 @@ git clone https://github.com/ZakKrevitt/shop-to-telegram-template.git
 cd shop-to-telegram-template
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r REQUIREMENTS.txt
+pip install -r requirements.txt
 python wizard.py
 python bot.py
 ```
@@ -29,7 +29,7 @@ The wizard asks for:
 - Ecommerce link
 - Telegram bot token from `@BotFather`
 - Shop name
-- Admin Telegram handle for wholesale inquiries
+- Optional admin Telegram handle for wholesale inquiries
 
 It writes `.env`, scrapes products into `products.json`, and leaves the bot ready to run.
 
@@ -47,8 +47,7 @@ For each new client, create a Telegram bot with `@BotFather`, get the client's e
 python scripts/deploy_client.py \
   --shop-url "https://merchant-shop.com" \
   --project-name "merchant-shop-bot" \
-  --shop-name "Merchant Shop" \
-  --admin-handle "@merchant_admin"
+  --shop-name "Merchant Shop"
 ```
 
 The script prompts for the bot token securely. For automation, pass `--bot-token` or set `BOT_TOKEN` in the shell environment.
@@ -58,7 +57,7 @@ The deploy script:
 - Copies the template into a temporary client build directory
 - Scrapes `products.json` from the ecommerce link
 - Creates a new Railway project and bot service
-- Stores `BOT_TOKEN`, `SHOP_URL`, `SHOP_NAME`, and `ADMIN_HANDLE` as Railway variables
+- Stores `BOT_TOKEN`, `SHOP_URL`, `SHOP_NAME`, and optional `ADMIN_HANDLE` as Railway variables
 - Deploys the bot with `railway up --detach`
 
 The bot token is never committed to git. Railway runs the service as an always-on worker using `railway.json`; no public domain is required because the bot connects outbound to Telegram.
@@ -91,7 +90,7 @@ ADMIN_HANDLE=@merchant_admin
 BANNER_IMG=/absolute/path/to/banner.jpg
 ```
 
-`TELEGRAM_BOT_TOKEN` is still accepted for older local installs, but new setup writes `BOT_TOKEN`.
+`ADMIN_HANDLE` can be omitted; the bot hides wholesale inquiry actions when it is not set. `TELEGRAM_BOT_TOKEN` is still accepted for older local installs, but new setup writes `BOT_TOKEN`.
 
 ## Scraping manually
 

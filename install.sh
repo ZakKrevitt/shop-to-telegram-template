@@ -66,7 +66,7 @@ echo -e "${GREEN}✔ Virtual env ready${RESET}"
 # ── 5. Install dependencies ──────────────────
 echo ""
 echo -e "${CYAN}Installing dependencies...${RESET}"
-pip install --quiet -r REQUIREMENTS.txt
+pip install --quiet -r requirements.txt
 echo -e "${GREEN}✔ Dependencies installed${RESET}"
 
 # ── 6. Wizard: collect config and scrape ─────

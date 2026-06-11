@@ -33,7 +33,8 @@ def test_dry_run_deploy_plans_railway_project_service_variables_and_upload():
 def test_railway_config_runs_single_always_on_worker():
     config = json.loads(Path("railway.json").read_text())
 
-    assert config["build"]["builder"] == "RAILPACK"
+    assert config["build"]["builder"] == "DOCKERFILE"
+    assert config["build"]["dockerfilePath"] == "Dockerfile"
     assert config["deploy"]["startCommand"] == "python bot.py"
     assert config["deploy"]["numReplicas"] == 1
     assert config["deploy"]["sleepApplication"] is False

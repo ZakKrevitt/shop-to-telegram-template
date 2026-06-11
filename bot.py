@@ -39,7 +39,7 @@ _load_env_file(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 # ── CONFIG ──────────────────────────────────────────────────────────
 TOKEN        = os.environ.get("BOT_TOKEN") or os.environ.get("TELEGRAM_BOT_TOKEN", "YOUR_BOT_TOKEN")
-ADMIN_HANDLE = os.environ.get("ADMIN_HANDLE", "@your_username")
+ADMIN_HANDLE = os.environ.get("ADMIN_HANDLE", "")
 SHOP_NAME    = os.environ.get("SHOP_NAME", "Your Shop")
 SHOP_URL     = os.environ.get("SHOP_URL", "https://your-shop.com")
 BANNER_IMG   = os.environ.get("BANNER_IMG", "")
@@ -48,6 +48,8 @@ PERSIST_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_per
 PRODUCTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "products.json")
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("telegram").setLevel(logging.WARNING)
 
 # ── LOAD CATALOG ────────────────────────────────────────────────────
 products = load_products(PRODUCTS_FILE)
@@ -116,6 +118,10 @@ def _checkout_url_for_cart(cart: list) -> str:
         return cart[0]["url"]
 
     return SHOP_URL
+
+
+def _has_admin_handle() -> bool:
+    return ADMIN_HANDLE.startswith("@") and len(ADMIN_HANDLE) > 1
 
 
 def _keyword_search(query_text: str, limit: int = 5) -> list:
@@ -226,14 +232,20 @@ async def show_product(update: Update, context: ContextTypes.DEFAULT_TYPE, idx: 
         f"💰 {_fmt_price(p.price)}  |  📦 In Stock\n\n"
         f"_{p.description}_"
     )
-    kb = [
+    actions = [
         [InlineKeyboardButton("🛒 Add to Cart", callback_data=f"qty_sel:{idx}"),
          InlineKeyboardButton("🌐 View Online", url=p.url)],
         [InlineKeyboardButton(checkout_txt, callback_data="cart_show")],
-        [InlineKeyboardButton("🏢 Wholesale", callback_data="wholesale_start"),
-         InlineKeyboardButton("📤 Share", switch_inline_query=p.title)],
-        [InlineKeyboardButton("⬅️ Back", callback_data="cat:start_mock")],
     ]
+    if _has_admin_handle():
+        actions.append([
+            InlineKeyboardButton("🏢 Wholesale", callback_data="wholesale_start"),
+            InlineKeyboardButton("📤 Share", switch_inline_query=p.title),
+        ])
+    else:
+        actions.append([InlineKeyboardButton("📤 Share", switch_inline_query=p.title)])
+    actions.append([InlineKeyboardButton("⬅️ Back", callback_data="cat:start_mock")])
+    kb = actions
     reply_markup = InlineKeyboardMarkup(kb)
     chat_id = update.effective_chat.id
 
@@ -356,6 +368,10 @@ async def clear_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def wholesale_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
+    if not _has_admin_handle():
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="Wholesale inquiries are not configured for this shop.")
+        return ConversationHandler.END
+
     prod = context.user_data.get("last_seen_product", "a product")
     context.user_data["wholesale_product"] = prod
     text = f"🏢 *Wholesale: {prod}*\n\nSelect quantity range:"
@@ -481,16 +497,17 @@ if __name__ == "__main__":
     persistence = PicklePersistence(filepath=PERSIST_FILE)
     app = ApplicationBuilder().token(TOKEN).persistence(persistence).build()
 
-    wholesale_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(wholesale_start, pattern="^wholesale_start$")],
-        states={
-            ASK_QTY: [CallbackQueryHandler(wholesale_qty, pattern="^qty:")],
-            ASK_LOC: [CallbackQueryHandler(wholesale_loc, pattern="^loc:")],
-        },
-        fallbacks=[CallbackQueryHandler(wholesale_cancel, pattern="^cancel$")],
-        name="wholesale_flow", persistent=True, allow_reentry=True,
-    )
-    app.add_handler(wholesale_conv)
+    if _has_admin_handle():
+        wholesale_conv = ConversationHandler(
+            entry_points=[CallbackQueryHandler(wholesale_start, pattern="^wholesale_start$")],
+            states={
+                ASK_QTY: [CallbackQueryHandler(wholesale_qty, pattern="^qty:")],
+                ASK_LOC: [CallbackQueryHandler(wholesale_loc, pattern="^loc:")],
+            },
+            fallbacks=[CallbackQueryHandler(wholesale_cancel, pattern="^cancel$")],
+            name="wholesale_flow", persistent=True, allow_reentry=True,
+        )
+        app.add_handler(wholesale_conv)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_router))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_products))
