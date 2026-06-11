@@ -69,7 +69,7 @@ echo -e "${CYAN}Installing dependencies...${RESET}"
 pip install --quiet -r REQUIREMENTS.txt
 echo -e "${GREEN}✔ Dependencies installed${RESET}"
 
-# ── 6. Wizard: collect config ────────────────
+# ── 6. Wizard: collect config and scrape ─────
 echo ""
 echo -e "${BOLD}──────────────────────────────────────────${RESET}"
 echo -e "${BOLD}  Let's configure your bot${RESET}"
@@ -81,32 +81,11 @@ echo -e "  1. Open Telegram and search for ${CYAN}@BotFather${RESET}"
 echo -e "  2. Send /newbot and follow the prompts"
 echo -e "  3. Copy the token it gives you"
 echo ""
-read -rp "  Telegram Bot Token: " BOT_TOKEN
+python wizard.py
 
-if [ -z "$BOT_TOKEN" ]; then
-  echo -e "${YELLOW}⚠  No token entered. You can add it to .env later.${RESET}"
-fi
-
+# ── 7. Optional: Playwright browsers ─────────
 echo ""
-read -rp "  Your shop URL (e.g. https://myshop.com): " SHOP_URL
-SHOP_URL="${SHOP_URL:-https://example.com}"
-
-echo ""
-read -rp "  Your shop name (used in bot messages): " SHOP_NAME
-SHOP_NAME="${SHOP_NAME:-My Shop}"
-
-# ── 7. Write .env ────────────────────────────
-cat > .env <<EOF
-TELEGRAM_BOT_TOKEN=${BOT_TOKEN}
-SHOP_URL=${SHOP_URL}
-SHOP_NAME=${SHOP_NAME}
-EOF
-echo ""
-echo -e "${GREEN}✔ .env file created${RESET}"
-
-# ── 8. Optional: Playwright browsers ─────────
-echo ""
-echo -e "${CYAN}Install Playwright browser? (needed for headless scraping)${RESET}"
+echo -e "${CYAN}Install Playwright browser? (only needed if you add headless scraping)${RESET}"
 read -rp "  Install Chromium? [y/N]: " INSTALL_PW
 if [[ "$INSTALL_PW" =~ ^[Yy]$ ]]; then
   echo -e "${CYAN}Installing Chromium (this may take a minute)...${RESET}"
@@ -114,7 +93,7 @@ if [[ "$INSTALL_PW" =~ ^[Yy]$ ]]; then
   echo -e "${GREEN}✔ Chromium installed${RESET}"
 fi
 
-# ── 9. Done ───────────────────────────────────
+# ── 8. Done ───────────────────────────────────
 echo ""
 echo -e "${BOLD}──────────────────────────────────────────${RESET}"
 echo -e "${BOLD}  ✅  Setup complete!${RESET}"
@@ -126,7 +105,7 @@ echo -e "  ${CYAN}cd ${DIR}${RESET}"
 echo -e "  ${CYAN}source .venv/bin/activate${RESET}"
 echo ""
 echo -e "  ${BOLD}Scrape your shop:${RESET}"
-echo -e "  ${CYAN}python scraper.py${RESET}"
+echo -e "  ${CYAN}python scraper.py https://your-shop.com --output products.json${RESET}"
 echo ""
 echo -e "  ${BOLD}Start the bot:${RESET}"
 echo -e "  ${CYAN}python bot.py${RESET}"

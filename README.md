@@ -1,95 +1,78 @@
 # create-tg-shop
 
-Turn any online shop into a Telegram storefront bot — scrape products, let users browse, add to cart, and checkout, all inside Telegram.
+Turn an ecommerce link into a Telegram storefront bot. The bot scrapes a starter product catalog, lets customers browse/search/add to cart in Telegram, then sends checkout back to the merchant's original store.
+
+## Payment model
+
+This template does not route sales through a platform Stripe Connect account, create connected accounts, or collect an application fee.
+
+Checkout works by deep-linking to the source store:
+
+- Shopify products with variant IDs link to `SHOP_URL/cart/{variant_id}:{qty}`
+- Other stores link to the product page or configured `SHOP_URL`
+- If the merchant's own Shopify checkout uses Stripe, Shopify Payments, PayPal, or another processor, that happens inside the merchant-owned checkout
 
 ## Quickstart
 
-**Python (pip):**
 ```bash
-pip install create-tg-shop
-create-tg-shop
+git clone https://github.com/ZakKrevitt/shop-to-telegram-template.git
+cd shop-to-telegram-template
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r REQUIREMENTS.txt
+python wizard.py
+python bot.py
 ```
 
-**Node (npx) — no install needed:**
-```bash
-npx create-tg-shop
-```
+The wizard asks for:
 
-The wizard scaffolds a project, asks for your Telegram bot token and shop URL, installs dependencies, and gets you running in under a minute.
+- Ecommerce link
+- Telegram bot token from `@BotFather`
+- Shop name
+- Admin Telegram handle for wholesale inquiries
+
+It writes `.env`, scrapes products into `products.json`, and leaves the bot ready to run.
+
+## One-line installer
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ZakKrevitt/shop-to-telegram-template/main/install.sh | bash
+```
 
 ## What it sets up
 
-- `bot.py` — ShopEngine + CartManager + Telegram message formatting
-- `scraper.py` — base scraper class (plug in Playwright or BeautifulSoup)
-- `products.json` — product catalog (edit directly or regenerate via scraper)
-- `stripe_connect.py` — Stripe Connect monetization helpers
-- `.env` — your bot token and shop config
+- `wizard.py` - collects the ecommerce link and Telegram config
+- `scraper.py` - best-effort Shopify, JSON-LD, and OpenGraph product scraper
+- `products.json` - product catalog used by the bot
+- `bot.py` - Telegram storefront with categories, product cards, cart, source-store checkout links, search, and wholesale inquiries
+- `.env` - local bot/shop configuration
 
-## Stripe Connect Monetization
-
-This template now includes a starter Stripe Connect integration.
-
-The intended model is:
-
-1. Merchants connect their own Stripe account
-2. Buyers checkout through Stripe-hosted Checkout
-3. Funds go directly to the merchant
-4. Your platform automatically keeps a fee
-
-This uses Stripe Connect destination charges + application fees.
-
-### Install
+## Environment variables
 
 ```bash
-pip install stripe
+BOT_TOKEN=123456:telegram-token
+SHOP_URL=https://merchant-shop.com
+SHOP_NAME=Merchant Shop
+ADMIN_HANDLE=@merchant_admin
+BANNER_IMG=/absolute/path/to/banner.jpg
 ```
 
-### Environment Variables
+`TELEGRAM_BOT_TOKEN` is still accepted for older local installs, but new setup writes `BOT_TOKEN`.
+
+## Scraping manually
 
 ```bash
-STRIPE_SECRET_KEY=sk_test_...
-TG_SHOP_PLATFORM_FEE_BPS=500
-TG_SHOP_SUCCESS_URL=https://your-domain.com/success?session_id={CHECKOUT_SESSION_ID}
-TG_SHOP_CANCEL_URL=https://your-domain.com/cancel
+python scraper.py https://merchant-shop.com --output products.json
 ```
 
-`500` basis points = 5% platform fee.
-
-### Example Usage
-
-```python
-from bot import ShopEngine
-from stripe_connect import create_checkout_session_for_connected_account
-
-engine = ShopEngine("products.json")
-
-checkout_url = create_checkout_session_for_connected_account(
-    cart={"p1": 1, "p2": 2},
-    products=engine.products,
-    connected_account_id="acct_123",
-    customer_telegram_id=123456789,
-)
-
-print(checkout_url)
-```
-
-## Future Direction
-
-This repo can evolve into:
-
-- Telegram-native commerce platform
-- Hosted SaaS for creators and small brands
-- Stripe Marketplace App
-- AI-powered social commerce layer
-- Multi-provider payment platform
+The scraper tries Shopify's public `products.json` endpoint first, then falls back to product metadata on the provided page. If no products are detected, edit `products.json` manually or try a more specific collection/product URL.
 
 ## Customizing
 
-- Implement `ShopScraper.scrape()` to pull real products from your shop
-- Wire Telegram callbacks into a real bot framework
-- Add Stripe OAuth onboarding flow
-- Add persistent carts via Redis/Postgres
-- Add webhook handling for refunds and order fulfillment
+- Replace `products.json` with a hand-curated catalog if scraping is incomplete
+- Customize Telegram copy/buttons in `bot.py`
+- Add persistence for carts if the bot needs multi-device or long-lived sessions
+- Add fulfillment/order webhooks in the merchant's own ecommerce platform
 
 ## License
 

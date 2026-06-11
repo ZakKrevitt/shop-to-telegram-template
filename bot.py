@@ -6,27 +6,44 @@ semantic search, copy buttons, and wholesale inquiry flow.
 
 Usage:
   1. pip install -r REQUIREMENTS.txt
-  2. Set BOT_TOKEN env var (or hardcode TOKEN below)
+  2. Set BOT_TOKEN env var or run python wizard.py
   3. Create products.json using scraper.py (or hand-write)
   4. python3 bot.py
 """
 
-import os, json, logging, urllib.parse
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, CopyTextButton
+import os, logging, re, urllib.parse
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler,
     CallbackQueryHandler, ConversationHandler, PicklePersistence, filters
 )
 from sentence_transformers import SentenceTransformer
 import faiss, numpy as np
-from scraper import Product, load_products
+from scraper import load_products
+
+
+def _load_env_file(filepath: str) -> None:
+    if not os.path.exists(filepath):
+        return
+
+    with open(filepath) as env_file:
+        for raw_line in env_file:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+
+            key, value = line.split("=", 1)
+            value = value.strip().strip('"').strip("'")
+            os.environ.setdefault(key.strip(), value)
+
+
+_load_env_file(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 # ── CONFIG ──────────────────────────────────────────────────────────
-TOKEN        = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN")
+TOKEN        = os.environ.get("BOT_TOKEN") or os.environ.get("TELEGRAM_BOT_TOKEN", "YOUR_BOT_TOKEN")
 ADMIN_HANDLE = os.environ.get("ADMIN_HANDLE", "@your_username")
 SHOP_NAME    = os.environ.get("SHOP_NAME", "Your Shop")
 SHOP_URL     = os.environ.get("SHOP_URL", "https://your-shop.com")
-IBAN         = os.environ.get("IBAN", "YOUR_IBAN_HERE")
 BANNER_IMG   = os.environ.get("BANNER_IMG", "")
 PERSIST_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_persistence.pickle")
 PRODUCTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "products.json")
@@ -46,12 +63,13 @@ for p in products:
             CAT_NAMES[cat] = f"🏷️ {cat.title()}"
 
 # ── SEMANTIC SEARCH ─────────────────────────────────────────────────
-print("Building semantic index...")
-_model = SentenceTransformer("all-MiniLM-L6-v2")
-_descriptions = [f"{p.title} {p.description}" for p in products]
-_embeddings   = _model.encode(_descriptions) if products else np.array([])
-_index        = None
-if len(_embeddings) > 0:
+_model = None
+_index = None
+if products:
+    print("Building semantic index...")
+    _model = SentenceTransformer("all-MiniLM-L6-v2")
+    _descriptions = [f"{p.title} {p.description}" for p in products]
+    _embeddings = _model.encode(_descriptions)
     _dimension = _embeddings.shape[1]
     _index = faiss.IndexFlatL2(_dimension)
     _index.add(np.array(_embeddings).astype("float32"))
@@ -71,6 +89,28 @@ def _fmt_price(val) -> str:
     return f"${val:.2f}"
 
 
+def _price_to_float(val) -> float:
+    if isinstance(val, (int, float)):
+        return float(val)
+
+    match = re.search(r"\d+(?:,\d{3})*(?:\.\d+)?", str(val or ""))
+    if not match:
+        return 0.0
+
+    return float(match.group(0).replace(",", ""))
+
+
+def _checkout_url_for_cart(cart: list) -> str:
+    if cart and all(item.get("variant_id") for item in cart):
+        parts = ",".join(f"{item['variant_id']}:{item.get('qty', 1)}" for item in cart)
+        return f"{SHOP_URL.rstrip('/')}/cart/{parts}"
+
+    if len(cart) == 1 and cart[0].get("url"):
+        return cart[0]["url"]
+
+    return SHOP_URL
+
+
 # ════════════════════════════════════════════════════════════════════
 #  1. MAIN MENU
 # ════════════════════════════════════════════════════════════════════
@@ -83,11 +123,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if i + 1 < len(cat_items):
             row.append(InlineKeyboardButton(cat_items[i+1][1], callback_data=f"cat:{cat_items[i+1][0]}"))
         kb.append(row)
-    kb.append([InlineKeyboardButton("🗺️ All Items", callback_data="cat:all")])
-    kb.append([
-        InlineKeyboardButton("🛒 View Cart", callback_data="cart_show"),
-        InlineKeyboardButton("🏦 Bank Transfer", callback_data="bank_transfer")
-    ])
+    if products:
+        kb.append([InlineKeyboardButton("🗺️ All Items", callback_data="cat:all")])
+        kb.append([InlineKeyboardButton("🛒 View Cart", callback_data="cart_show")])
+    else:
+        text = f"🌿 *{SHOP_NAME}*\n\nThe catalog is empty right now."
+    kb.append([InlineKeyboardButton("🌐 Open Store", url=SHOP_URL)])
     reply_markup = InlineKeyboardMarkup(kb)
     chat_id = update.effective_chat.id
 
@@ -123,7 +164,10 @@ async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE, cat:
         text = f"No items found."
         kb = [[InlineKeyboardButton("⬅️ Back", callback_data="cat:start_mock")]]
         if q:
-            await q.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+            if q.message.caption:
+                await q.edit_message_caption(caption=text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+            else:
+                await q.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
         return
 
     header = f"*{CAT_NAMES.get(cat, cat)}* ({len(matching)} items)\n\n_Tap to view:_\n"
@@ -132,7 +176,10 @@ async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE, cat:
         kb.append([InlineKeyboardButton(f"{p.title} — {_fmt_price(p.price)}", callback_data=f"prod_show:{idx}")])
     kb.append([InlineKeyboardButton("⬅️ Back", callback_data="cat:start_mock")])
     if q:
-        await q.edit_message_text(text=header, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+        if q.message.caption:
+            await q.edit_message_caption(caption=header, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+        else:
+            await q.edit_message_text(text=header, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -142,7 +189,7 @@ async def show_product(update: Update, context: ContextTypes.DEFAULT_TYPE, idx: 
     p = products[idx]
     cart = context.user_data.get("cart", [])
     cart_n = sum(item.get("qty", 1) for item in cart)
-    checkout_txt = f"💳 Checkout ({cart_n} items)" if cart_n > 0 else "💳 Checkout"
+    checkout_txt = f"🌐 Checkout on Site ({cart_n} items)" if cart_n > 0 else "🌐 Checkout on Site"
 
     text = (
         f"*{p.title.upper()}*\n"
@@ -188,7 +235,7 @@ async def select_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     p = products[idx]
     cart = context.user_data.get("cart", [])
     cart_n = sum(item.get("qty", 1) for item in cart)
-    checkout_txt = f"💳 Checkout ({cart_n} items)" if cart_n > 0 else "💳 Checkout"
+    checkout_txt = f"🌐 Checkout on Site ({cart_n} items)" if cart_n > 0 else "🌐 Checkout on Site"
 
     text = f"🛍️ *{p.title}*\n\nSelect quantity:"
     kb = [
@@ -249,26 +296,17 @@ async def show_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lines = [f"🛒 *Your Cart — {SHOP_NAME}*\n━━━━━━━━━━━━━━"]
     total = 0.0
     for item in cart:
-        try:
-            price_str = item["price"].replace("$", "").replace(",", "").strip()
-            price = float(price_str)
-        except:
-            price = 0.0
+        price = _price_to_float(item.get("price"))
         sub = price * item.get("qty", 1)
         total += sub
         lines.append(f"• {item.get('qty',1)}x {item['title']} — ${sub:.2f}")
     lines.append("━━━━━━━━━━━━━━")
     lines.append(f"💰 *Total: ${total:.2f}*")
 
-    # Build cart permalink if variant_ids exist
-    if all(item.get("variant_id") for item in cart):
-        parts = ",".join(f"{item['variant_id']}:{item.get('qty',1)}" for item in cart)
-        checkout_url = f"{SHOP_URL}/cart/{parts}"
-    else:
-        checkout_url = SHOP_URL
+    checkout_url = _checkout_url_for_cart(cart)
 
     kb = [
-        [InlineKeyboardButton("💳 Checkout", url=checkout_url)],
+        [InlineKeyboardButton("🌐 Checkout on Site", url=checkout_url)],
         [InlineKeyboardButton("🪟 Clear Cart", callback_data="cart_clear")],
         [InlineKeyboardButton("⬅️ Back to Shop", callback_data="cat:start_mock")],
     ]
@@ -283,30 +321,7 @@ async def clear_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ════════════════════════════════════════════════════════════════════
-#  7. COPY BUTTONS
-# ════════════════════════════════════════════════════════════════════
-async def show_bank_transfer(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    if q:
-        await q.answer()
-    text = (
-        "🏦 *Bank Transfer*\n\n"
-        f"`{IBAN}`\n\n"
-        "In Revolut: *Payments → New payment → Send to bank → enter IBAN*"
-    )
-    kb = [
-        [InlineKeyboardButton("📋 Copy IBAN", copy_text=CopyTextButton(text=IBAN))],
-        [InlineKeyboardButton("⬅️ Back", callback_data="cat:start_mock")],
-    ]
-    if q:
-        await q.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
-    else:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=text,
-                                        reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
-
-
-# ════════════════════════════════════════════════════════════════════
-#  8. WHOLESALE FLOW
+#  7. WHOLESALE FLOW
 # ════════════════════════════════════════════════════════════════════
 async def wholesale_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -368,7 +383,7 @@ async def wholesale_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ════════════════════════════════════════════════════════════════════
-#  9. SEMANTIC SEARCH
+#  8. SEMANTIC SEARCH
 # ════════════════════════════════════════════════════════════════════
 async def search_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query_text = update.message.text if update.message else ""
@@ -388,7 +403,7 @@ async def search_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ════════════════════════════════════════════════════════════════════
-#  10. BUTTON ROUTER
+#  9. BUTTON ROUTER
 # ════════════════════════════════════════════════════════════════════
 async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -423,12 +438,10 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_cart(update, context)
     elif data == "cart_clear":
         await clear_cart(update, context)
-    elif data == "bank_transfer":
-        await show_bank_transfer(update, context)
 
 
 # ════════════════════════════════════════════════════════════════════
-#  11. MAIN
+#  10. MAIN
 # ════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
     persistence = PicklePersistence(filepath=PERSIST_FILE)
