@@ -15,10 +15,12 @@ Enable a user to enter an existing ecommerce link and create a fully functional 
    - Ecommerce URL
    - Telegram Bot Token
    - Admin DMs / Controls
+5. **Railway Deploy (`scripts/deploy_client.py`)**: One-command client provisioning that creates a Railway project/service, stores secrets as service variables, uploads a generated client build, and runs the bot as an always-on worker.
 
 ## Success Criteria
 - Agent can run `python wizard.py` to configure the instance.
 - Bot starts and correctly displays indexed products.
 - Cart mechanics work end-to-end.
 - Checkout links hand off to the merchant-owned ecommerce checkout.
+- A new client bot can be created and hosted on Railway from a bot token + ecommerce link.
 - Verifiable by `pytest`.

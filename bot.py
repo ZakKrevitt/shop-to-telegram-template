@@ -2,7 +2,7 @@
 🛍️ Boutique Telegram Commerce Bot — shop-to-telegram-template
 ===============================================================
 Drop-in Telegram bot with category browsing, product cards, cart,
-semantic search, copy buttons, and wholesale inquiry flow.
+search, and wholesale inquiry flow.
 
 Usage:
   1. pip install -r REQUIREMENTS.txt
@@ -17,8 +17,6 @@ from telegram.ext import (
     ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler,
     CallbackQueryHandler, ConversationHandler, PicklePersistence, filters
 )
-from sentence_transformers import SentenceTransformer
-import faiss, numpy as np
 from scraper import load_products
 
 
@@ -45,6 +43,7 @@ ADMIN_HANDLE = os.environ.get("ADMIN_HANDLE", "@your_username")
 SHOP_NAME    = os.environ.get("SHOP_NAME", "Your Shop")
 SHOP_URL     = os.environ.get("SHOP_URL", "https://your-shop.com")
 BANNER_IMG   = os.environ.get("BANNER_IMG", "")
+ENABLE_SEMANTIC_SEARCH = os.environ.get("ENABLE_SEMANTIC_SEARCH", "").lower() in {"1", "true", "yes", "on"}
 PERSIST_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_persistence.pickle")
 PRODUCTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "products.json")
 
@@ -65,14 +64,22 @@ for p in products:
 # ── SEMANTIC SEARCH ─────────────────────────────────────────────────
 _model = None
 _index = None
-if products:
+np = None
+if products and ENABLE_SEMANTIC_SEARCH:
     print("Building semantic index...")
-    _model = SentenceTransformer("all-MiniLM-L6-v2")
-    _descriptions = [f"{p.title} {p.description}" for p in products]
-    _embeddings = _model.encode(_descriptions)
-    _dimension = _embeddings.shape[1]
-    _index = faiss.IndexFlatL2(_dimension)
-    _index.add(np.array(_embeddings).astype("float32"))
+    try:
+        from sentence_transformers import SentenceTransformer
+        import faiss
+        import numpy as np
+
+        _model = SentenceTransformer("all-MiniLM-L6-v2")
+        _descriptions = [f"{p.title} {p.description}" for p in products]
+        _embeddings = _model.encode(_descriptions)
+        _dimension = _embeddings.shape[1]
+        _index = faiss.IndexFlatL2(_dimension)
+        _index.add(np.array(_embeddings).astype("float32"))
+    except ImportError:
+        logging.warning("Semantic search dependencies are not installed; using keyword search.")
 
 # ── STATES ──────────────────────────────────────────────────────────
 ASK_QTY, ASK_LOC = range(2)
@@ -109,6 +116,29 @@ def _checkout_url_for_cart(cart: list) -> str:
         return cart[0]["url"]
 
     return SHOP_URL
+
+
+def _keyword_search(query_text: str, limit: int = 5) -> list:
+    terms = [term for term in re.findall(r"[a-z0-9]+", query_text.lower()) if len(term) > 1]
+    if not terms:
+        return []
+
+    scored = []
+    for idx, product in enumerate(products):
+        haystack = " ".join(
+            [
+                product.title,
+                product.description,
+                " ".join(product.tags),
+                " ".join(product.categories),
+            ]
+        ).lower()
+        score = sum(haystack.count(term) for term in terms)
+        if score:
+            scored.append((score, idx))
+
+    scored.sort(reverse=True)
+    return [idx for _, idx in scored[:limit]]
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -387,16 +417,20 @@ async def wholesale_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ════════════════════════════════════════════════════════════════════
 async def search_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query_text = update.message.text if update.message else ""
-    if not query_text or _index is None:
+    if not query_text:
         return
-    vec = _model.encode([query_text])
-    D, I = _index.search(np.array(vec).astype("float32"), k=5)
-    found = False
-    for i in I[0]:
-        if i == -1 or i >= len(products):
-            continue
-        found = True
+
+    if _index is not None and _model is not None and np is not None:
+        vec = _model.encode([query_text])
+        _, matches = _index.search(np.array(vec).astype("float32"), k=5)
+        result_indexes = [i for i in matches[0] if i != -1 and i < len(products)]
+    else:
+        result_indexes = _keyword_search(query_text)
+
+    for i in result_indexes:
         await show_product(update, context, i)
+
+    found = bool(result_indexes)
     if not found:
         await context.bot.send_message(chat_id=update.effective_chat.id,
                                        text="Nothing found. Try browsing categories.")

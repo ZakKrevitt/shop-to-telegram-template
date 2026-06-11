@@ -1,8 +1,4 @@
 python-telegram-bot>=20.0
 requests
 beautifulsoup4
-playwright
-sentence-transformers
-faiss-cpu
-numpy
 pytest

@@ -83,17 +83,7 @@ echo -e "  3. Copy the token it gives you"
 echo ""
 python wizard.py
 
-# ── 7. Optional: Playwright browsers ─────────
-echo ""
-echo -e "${CYAN}Install Playwright browser? (only needed if you add headless scraping)${RESET}"
-read -rp "  Install Chromium? [y/N]: " INSTALL_PW
-if [[ "$INSTALL_PW" =~ ^[Yy]$ ]]; then
-  echo -e "${CYAN}Installing Chromium (this may take a minute)...${RESET}"
-  playwright install chromium --quiet
-  echo -e "${GREEN}✔ Chromium installed${RESET}"
-fi
-
-# ── 8. Done ───────────────────────────────────
+# ── 7. Done ───────────────────────────────────
 echo ""
 echo -e "${BOLD}──────────────────────────────────────────${RESET}"
 echo -e "${BOLD}  ✅  Setup complete!${RESET}"

@@ -39,6 +39,38 @@ It writes `.env`, scrapes products into `products.json`, and leaves the bot read
 curl -fsSL https://raw.githubusercontent.com/ZakKrevitt/shop-to-telegram-template/main/install.sh | bash
 ```
 
+## One-shot Railway deploy
+
+For each new client, create a Telegram bot with `@BotFather`, get the client's ecommerce link, then run:
+
+```bash
+python scripts/deploy_client.py \
+  --shop-url "https://merchant-shop.com" \
+  --project-name "merchant-shop-bot" \
+  --shop-name "Merchant Shop" \
+  --admin-handle "@merchant_admin"
+```
+
+The script prompts for the bot token securely. For automation, pass `--bot-token` or set `BOT_TOKEN` in the shell environment.
+
+The deploy script:
+
+- Copies the template into a temporary client build directory
+- Scrapes `products.json` from the ecommerce link
+- Creates a new Railway project and bot service
+- Stores `BOT_TOKEN`, `SHOP_URL`, `SHOP_NAME`, and `ADMIN_HANDLE` as Railway variables
+- Deploys the bot with `railway up --detach`
+
+The bot token is never committed to git. Railway runs the service as an always-on worker using `railway.json`; no public domain is required because the bot connects outbound to Telegram.
+
+Prerequisites:
+
+- Railway CLI installed and logged in with `railway login`
+- A Telegram bot token from `@BotFather`
+- The ecommerce link to scrape
+
+Use `--dry-run` to print the Railway commands without creating a project.
+
 ## What it sets up
 
 - `wizard.py` - collects the ecommerce link and Telegram config
@@ -46,6 +78,8 @@ curl -fsSL https://raw.githubusercontent.com/ZakKrevitt/shop-to-telegram-templat
 - `products.json` - product catalog used by the bot
 - `bot.py` - Telegram storefront with categories, product cards, cart, source-store checkout links, search, and wholesale inquiries
 - `.env` - local bot/shop configuration
+- `railway.json` - always-on Railway worker config
+- `scripts/deploy_client.py` - one-command per-client Railway deployment
 
 ## Environment variables
 
@@ -66,6 +100,14 @@ python scraper.py https://merchant-shop.com --output products.json
 ```
 
 The scraper tries Shopify's public `products.json` endpoint first, then falls back to product metadata on the provided page. If no products are detected, edit `products.json` manually or try a more specific collection/product URL.
+
+## Optional semantic search
+
+The hosted default uses lightweight keyword search. To enable semantic search locally or in a custom Railway build, install the optional packages and set `ENABLE_SEMANTIC_SEARCH=true`:
+
+```bash
+pip install -r requirements-semantic.txt
+```
 
 ## Customizing
 
