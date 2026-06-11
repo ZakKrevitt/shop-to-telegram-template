@@ -142,6 +142,7 @@ def deploy_client(
             shop_name=shop_name,
             admin_handle=admin_handle,
             products_file=workdir / "products.json",
+            sections_file=workdir / "sections.json",
             env_file=workdir / ".env",
             skip_scrape=skip_scrape,
         )

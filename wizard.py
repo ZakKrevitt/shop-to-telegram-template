@@ -7,10 +7,11 @@ from pathlib import Path
 from typing import Iterable, Optional
 from urllib.parse import urlparse
 
-from scraper import ShopScraper, save_products
+from scraper import ShopScraper, save_products, save_site_sections, scrape_site_sections
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_PRODUCTS_FILE = ROOT / "products.json"
+DEFAULT_SECTIONS_FILE = ROOT / "sections.json"
 DEFAULT_ENV_FILE = ROOT / ".env"
 
 
@@ -70,6 +71,7 @@ def configure(
     shop_name: Optional[str] = None,
     admin_handle: str = "",
     products_file: Path = DEFAULT_PRODUCTS_FILE,
+    sections_file: Path = DEFAULT_SECTIONS_FILE,
     env_file: Path = DEFAULT_ENV_FILE,
     skip_scrape: bool = False,
 ) -> int:
@@ -83,15 +85,20 @@ def configure(
     )
 
     products = []
+    sections = []
     if not skip_scrape:
         print(f"Scraping {shop_url}...")
         try:
             products = ShopScraper(shop_url).scrape()
+            sections = scrape_site_sections(shop_url)
         except Exception as exc:
             print(f"Scrape failed: {exc}", file=sys.stderr)
 
     save_products(products, str(products_file))
+    save_site_sections(sections, str(sections_file))
     _print_products_summary(len(products), products_file)
+    if sections:
+        print(f"Saved {len(sections)} website sections to {sections_file}")
     print(f"Configured {shop_name}. Start the bot with: python bot.py")
     return len(products)
 
@@ -103,6 +110,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--shop-name", default="", help="Display name shown in bot messages")
     parser.add_argument("--admin-handle", default="", help="Telegram username for wholesale inquiries")
     parser.add_argument("--products-file", type=Path, default=DEFAULT_PRODUCTS_FILE)
+    parser.add_argument("--sections-file", type=Path, default=DEFAULT_SECTIONS_FILE)
     parser.add_argument("--env-file", type=Path, default=DEFAULT_ENV_FILE)
     parser.add_argument("--skip-scrape", action="store_true", help="Write config without fetching products")
     return parser
@@ -126,6 +134,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         shop_name=shop_name,
         admin_handle=admin_handle,
         products_file=args.products_file,
+        sections_file=args.sections_file,
         env_file=args.env_file,
         skip_scrape=args.skip_scrape,
     )

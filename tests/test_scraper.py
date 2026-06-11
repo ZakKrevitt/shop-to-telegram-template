@@ -1,6 +1,6 @@
 import json
 
-from scraper import ShopScraper, parse_jsonld_products, parse_opengraph_product
+from scraper import ShopScraper, parse_jsonld_products, parse_opengraph_product, scrape_site_sections
 
 
 class FakeResponse:
@@ -43,7 +43,12 @@ def test_scrapes_shopify_products_endpoint():
                 "product_type": "Bags",
                 "tags": "canvas, carry",
                 "image": {"src": "//cdn.example/tote.jpg"},
-                "variants": [{"id": 555, "price": "24.50"}],
+                "images": [{"id": 1, "src": "//cdn.example/tote.jpg"}],
+                "options": [{"name": "Size", "values": ["Small", "Large"]}],
+                "variants": [
+                    {"id": 555, "title": "Small", "option1": "Small", "price": "24.50", "available": True, "image_id": 1},
+                    {"id": 556, "title": "Large", "option1": "Large", "price": "29.50", "available": False},
+                ],
             }
         ]
     }
@@ -61,6 +66,11 @@ def test_scrapes_shopify_products_endpoint():
     assert products[0].variant_id == "555"
     assert products[0].url == "https://shop.example/products/canvas-tote"
     assert products[0].categories == ["bags"]
+    assert products[0].images == ["https://cdn.example/tote.jpg"]
+    assert products[0].options == [{"name": "Size", "values": ["Small", "Large"]}]
+    assert products[0].variants[0]["title"] == "Small"
+    assert products[0].variants[0]["available"] is True
+    assert products[0].variants[1]["available"] is False
 
 
 def test_jsonld_product_fallback_extracts_product_metadata():
@@ -111,3 +121,38 @@ def test_opengraph_fallback_creates_single_product():
     assert products[0].title == "Fallback Product"
     assert products[0].price == "$12.25"
     assert products[0].image == "https://store.example/fallback.jpg"
+
+
+def test_scrape_site_sections_from_sitemaps():
+    sitemap = """
+    <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+      <sitemap><loc>https://shop.example/sitemap_pages_1.xml</loc></sitemap>
+      <sitemap><loc>https://shop.example/sitemap_collections_1.xml</loc></sitemap>
+    </sitemapindex>
+    """
+    pages = """
+    <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+      <url><loc>https://shop.example/pages/about-us</loc></url>
+      <url><loc>https://shop.example/pages/faq</loc></url>
+    </urlset>
+    """
+    collections = """
+    <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+      <url><loc>https://shop.example/collections/set-setting</loc></url>
+    </urlset>
+    """
+    session = FakeSession(
+        {
+            "https://shop.example/sitemap.xml": FakeResponse(text=sitemap),
+            "https://shop.example/sitemap_pages_1.xml": FakeResponse(text=pages),
+            "https://shop.example/sitemap_collections_1.xml": FakeResponse(text=collections),
+        }
+    )
+
+    sections = scrape_site_sections("https://shop.example", session=session)
+
+    assert sections == [
+        {"title": "About & Philosophy", "url": "https://shop.example/pages/about-us"},
+        {"title": "Set & Setting", "url": "https://shop.example/collections/set-setting"},
+        {"title": "FAQ", "url": "https://shop.example/pages/faq"},
+    ]
