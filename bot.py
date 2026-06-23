@@ -67,35 +67,62 @@ logging.getLogger("telegram").setLevel(logging.WARNING)
 
 
 # ── LOAD CATALOG ────────────────────────────────────────────────────
-def _bootstrap_catalog() -> list:
-    """Load products.json, or scrape SHOP_URL on first boot if it is empty.
+def _shop_host() -> str:
+    try:
+        return urllib.parse.urlparse(SHOP_URL).netloc.lower().removeprefix("www.")
+    except Exception:
+        return ""
 
-    This lets a fresh deploy come up with only BOT_TOKEN + SHOP_URL set,
-    with no local wizard step required.
+
+def _catalog_matches_shop(catalog: list) -> bool:
+    """True if the catalog's product URLs belong to the configured SHOP_URL.
+
+    Used to tell a real (already-scraped) catalog apart from the bundled
+    sample products, so a fresh deploy scrapes the actual store instead of
+    serving the demo items.
+    """
+    host = _shop_host()
+    if not host:
+        return True
+    for product in catalog:
+        p_host = urllib.parse.urlparse(getattr(product, "url", "") or "").netloc.lower().removeprefix("www.")
+        if p_host and (p_host == host or p_host.endswith("." + host) or host.endswith("." + p_host)):
+            return True
+    return False
+
+
+def _bootstrap_catalog() -> list:
+    """Return the catalog, scraping SHOP_URL on boot when needed.
+
+    A deploy ships sample products.json; when SHOP_URL points at a real store
+    whose products aren't in that file yet, scrape it. This lets a fresh deploy
+    come up with only BOT_TOKEN + SHOP_URL set, no local wizard step.
     """
     existing = load_products(PRODUCTS_FILE)
-    if existing:
-        return existing
-
     placeholder = (not SHOP_URL) or "your-shop.com" in SHOP_URL
     if placeholder:
         return existing
+    if existing and _catalog_matches_shop(existing):
+        return existing
 
-    logging.info("No catalog found — scraping %s on boot...", SHOP_URL)
+    logging.info("Scraping %s on boot...", SHOP_URL)
     try:
         from scraper import ShopScraper, save_products, save_site_sections, scrape_site_sections
 
         scraped = ShopScraper(SHOP_URL).scrape()
-        save_products(scraped, PRODUCTS_FILE)
-        try:
-            save_site_sections(scrape_site_sections(SHOP_URL), SECTIONS_FILE)
-        except Exception:
-            pass
-        logging.info("Boot scrape complete: %d products.", len(scraped))
-        return scraped
+        if scraped:
+            save_products(scraped, PRODUCTS_FILE)
+            try:
+                save_site_sections(scrape_site_sections(SHOP_URL), SECTIONS_FILE)
+            except Exception:
+                pass
+            logging.info("Boot scrape complete: %d products.", len(scraped))
+            return scraped
+        logging.warning("Boot scrape found no products for %s.", SHOP_URL)
+        return []
     except Exception as exc:
-        logging.warning("Boot scrape failed (%s); starting with empty catalog.", exc)
-        return existing
+        logging.warning("Boot scrape failed (%s).", exc)
+        return existing if _catalog_matches_shop(existing) else []
 
 
 products = _bootstrap_catalog()

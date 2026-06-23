@@ -56,6 +56,20 @@ def test_restricted_filter_is_config_driven(monkeypatch):
     assert bot._is_restricted_product(product) is True
 
 
+def test_sample_catalog_does_not_match_a_real_shop(monkeypatch):
+    monkeypatch.setattr(bot, "SHOP_URL", "https://merchant-shop.com")
+    samples = [Product(id="1", name="Lamp", title="Lamp", description="", price="$1",
+                       url="https://example.com/products/lamp")]
+    assert bot._catalog_matches_shop(samples) is False
+
+
+def test_scraped_catalog_matches_its_shop(monkeypatch):
+    monkeypatch.setattr(bot, "SHOP_URL", "https://merchant-shop.com")
+    catalog = [Product(id="1", name="Tee", title="Tee", description="", price="$1",
+                       url="https://merchant-shop.com/products/tee")]
+    assert bot._catalog_matches_shop(catalog) is True
+
+
 def test_category_is_derived_from_product_taxonomy():
     product = Product(
         id="3",
