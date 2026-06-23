@@ -54,6 +54,10 @@ DEFAULT_BANNER_IMG = os.path.join(ROOT_DIR, "assets", "start-banner.png")
 BANNER_IMG   = os.environ.get("BANNER_IMG") or DEFAULT_BANNER_IMG
 DEFAULT_LANGUAGE = os.environ.get("DEFAULT_LANGUAGE", "en").lower()
 ENABLE_SEMANTIC_SEARCH = os.environ.get("ENABLE_SEMANTIC_SEARCH", "").lower() in {"1", "true", "yes", "on"}
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+CHAT_MODEL = (os.environ.get("CHAT_MODEL", "").strip() or "claude-haiku-4-5")
+CHAT_MAX_RESULTS = 8
+CHAT_HISTORY_TURNS = 12
 # Optional compliance filter — comma-separated keywords hidden from the bot.
 # Empty by default; set RESTRICTED_KEYWORDS for regulated stores.
 RESTRICTED_KEYWORDS = {kw.strip().lower() for kw in os.environ.get("RESTRICTED_KEYWORDS", "").split(",") if kw.strip()}
@@ -169,6 +173,12 @@ TEXT = {
         "cancel": "⬅️ Cancel",
         "no_items": "No items found.",
         "tap_to_view": "Tap to view:",
+        "chat_button": "💬 Chat & Discover",
+        "chat_intro": "💬 Tell me what you're looking for — a mood, a benefit, an occasion, an ingredient — and I'll pull together products that fit.\n\nTry: \"something calming for the evening\" or \"functional wellness gifts\".\n\nTap Done or send /done when you're finished.",
+        "chat_results": "Here's what fits — tap any to take a closer look:",
+        "chat_no_matches": "I couldn't find a close match for that. Want to describe it another way?",
+        "chat_error": "Sorry, I'm having trouble right now. Please try again in a moment.",
+        "chat_done": "✖️ Done",
         "sections_title": "{shop_name} sections",
         "no_sections": "No site sections are configured yet.",
         "restricted": "This item is not available through the Telegram bot.",
@@ -219,6 +229,12 @@ TEXT = {
         "cancel": "⬅️ Abbrechen",
         "no_items": "Keine Artikel gefunden.",
         "tap_to_view": "Zum Ansehen tippen:",
+        "chat_button": "💬 Chatten & Entdecken",
+        "chat_intro": "💬 Sag mir, wonach du suchst – eine Stimmung, eine Wirkung, ein Anlass, eine Zutat – und ich stelle passende Produkte zusammen.\n\nZum Beispiel: „etwas Beruhigendes für den Abend“ oder „funktionale Wellness-Geschenke“.\n\nTippe auf Fertig oder sende /done, wenn du fertig bist.",
+        "chat_results": "Das passt – tippe für einen näheren Blick:",
+        "chat_no_matches": "Dafür habe ich keine passende Auswahl gefunden. Magst du es anders beschreiben?",
+        "chat_error": "Entschuldigung, gerade gibt es ein Problem. Bitte versuche es gleich noch einmal.",
+        "chat_done": "✖️ Fertig",
         "sections_title": "{shop_name} Bereiche",
         "no_sections": "Es sind noch keine Website-Bereiche konfiguriert.",
         "restricted": "Dieser Artikel ist nicht über den Telegram-Bot verfügbar.",
@@ -269,6 +285,12 @@ TEXT = {
         "cancel": "⬅️ Cancelar",
         "no_items": "No se encontraron artículos.",
         "tap_to_view": "Toca para ver:",
+        "chat_button": "💬 Chatea y descubre",
+        "chat_intro": "💬 Dime qué buscas —un estado de ánimo, un beneficio, una ocasión, un ingrediente— y reuniré productos que encajen.\n\nPor ejemplo: «algo relajante para la noche» o «regalos de bienestar funcional».\n\nToca Listo o envía /done cuando termines.",
+        "chat_results": "Esto encaja, toca para verlo de cerca:",
+        "chat_no_matches": "No encontré algo que encaje bien. ¿Quieres describirlo de otra forma?",
+        "chat_error": "Lo siento, ahora mismo tengo problemas. Inténtalo de nuevo en un momento.",
+        "chat_done": "✖️ Listo",
         "sections_title": "Secciones de {shop_name}",
         "no_sections": "Aún no hay secciones del sitio configuradas.",
         "restricted": "Este artículo no está disponible a través del bot de Telegram.",
@@ -319,6 +341,12 @@ TEXT = {
         "cancel": "⬅️ Cancelar",
         "no_items": "Nenhum artigo encontrado.",
         "tap_to_view": "Toca para ver:",
+        "chat_button": "💬 Conversar e descobrir",
+        "chat_intro": "💬 Diz-me o que procuras — um estado de espírito, um benefício, uma ocasião, um ingrediente — e eu reúno produtos que encaixem.\n\nPor exemplo: «algo calmante para a noite» ou «presentes de bem-estar funcional».\n\nToca em Concluído ou envia /done quando terminares.",
+        "chat_results": "Isto encaixa, toca para ver de perto:",
+        "chat_no_matches": "Não encontrei nada que encaixasse bem. Queres descrever de outra forma?",
+        "chat_error": "Desculpa, estou com dificuldades neste momento. Tenta novamente daqui a pouco.",
+        "chat_done": "✖️ Concluído",
         "sections_title": "Secções de {shop_name}",
         "no_sections": "Ainda não há secções do site configuradas.",
         "restricted": "Este artigo não está disponível através do bot do Telegram.",
@@ -369,6 +397,12 @@ TEXT = {
         "cancel": "⬅️ Annuleren",
         "no_items": "Geen artikelen gevonden.",
         "tap_to_view": "Tik om te bekijken:",
+        "chat_button": "💬 Chatten & ontdekken",
+        "chat_intro": "💬 Vertel me waar je naar op zoek bent — een sfeer, een voordeel, een gelegenheid, een ingrediënt — en ik stel passende producten samen.\n\nBijvoorbeeld: \"iets rustgevends voor de avond\" of \"functionele wellness-cadeaus\".\n\nTik op Klaar of stuur /done als je klaar bent.",
+        "chat_results": "Dit past — tik om beter te bekijken:",
+        "chat_no_matches": "Ik kon hier geen goede match voor vinden. Wil je het anders beschrijven?",
+        "chat_error": "Sorry, het lukt me nu even niet. Probeer het zo nog eens.",
+        "chat_done": "✖️ Klaar",
         "sections_title": "{shop_name} secties",
         "no_sections": "Er zijn nog geen sitesecties geconfigureerd.",
         "restricted": "Dit artikel is niet beschikbaar via de Telegram-bot.",
@@ -471,6 +505,7 @@ if products and ENABLE_SEMANTIC_SEARCH:
 
 # ── STATES ──────────────────────────────────────────────────────────
 ASK_QTY, ASK_LOC = range(2)
+CHAT_ACTIVE = 300
 
 # ── HELPERS ─────────────────────────────────────────────────────────
 def _user(update: Update) -> dict:
@@ -678,6 +713,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb.append(row)
     if VISIBLE_PRODUCT_INDEXES:
         kb.append([InlineKeyboardButton(_t(context, "all_items"), callback_data="cat:all")])
+        if _chat_enabled():
+            kb.append([InlineKeyboardButton(_t(context, "chat_button"), callback_data="chat_start")])
         kb.append([
             InlineKeyboardButton(_t(context, "view_cart"), callback_data="cart_show"),
             InlineKeyboardButton(_t(context, "site_sections"), callback_data="sections_show"),
@@ -1129,6 +1166,179 @@ async def search_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ════════════════════════════════════════════════════════════════════
+#  11b. AI CHAT — conversational semantic product finder
+# ════════════════════════════════════════════════════════════════════
+try:  # optional dependency; chat degrades to "unavailable" if missing
+    import anthropic as _anthropic_pkg
+except ImportError:  # pragma: no cover - anthropic is optional
+    _anthropic_pkg = None
+
+_anthropic_client = None
+_CHAT_CATALOG = None
+
+_CHAT_TOOL = {
+    "name": "recommend_products",
+    "description": "Return the catalog products that best match the shopper's request, with a short friendly reply.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "product_ids": {
+                "type": "array",
+                "items": {"type": "integer"},
+                "description": "Catalog IDs of matching products, best match first. Empty list if nothing fits.",
+            },
+            "reply": {
+                "type": "string",
+                "description": "One or two friendly sentences introducing the picks, or gently saying nothing fit. "
+                               "No markdown, no bullet lists, no prices.",
+            },
+        },
+        "required": ["product_ids", "reply"],
+        "additionalProperties": False,
+    },
+}
+
+
+def _chat_enabled() -> bool:
+    return bool(ANTHROPIC_API_KEY) and _anthropic_pkg is not None and bool(VISIBLE_PRODUCT_INDEXES)
+
+
+def _get_anthropic_client():
+    global _anthropic_client
+    if _anthropic_client is None:
+        _anthropic_client = _anthropic_pkg.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+    return _anthropic_client
+
+
+def _chat_catalog() -> str:
+    """A compact, cache-stable catalog (id, title, categories, clipped description)."""
+    global _CHAT_CATALOG
+    if _CHAT_CATALOG is None:
+        lines = []
+        for idx in VISIBLE_PRODUCT_INDEXES:
+            p = products[idx]
+            cats = ", ".join(p.categories) if p.categories else ""
+            head = f"[{idx}] {p.title}" + (f" — {cats}" if cats else "")
+            lines.append(f"{head}\n{_clip(p.description, 320)}")
+        _CHAT_CATALOG = "\n\n".join(lines)
+    return _CHAT_CATALOG
+
+
+def _chat_system() -> list:
+    instructions = (
+        f"You are a warm, knowledgeable shopping assistant for {SHOP_NAME}. A shopper describes what they want in "
+        "their own words — a mood, a benefit, an occasion, an ingredient — and you recommend the products from the "
+        "catalog below that best fit, judging fit from the product descriptions.\n\n"
+        "Rules:\n"
+        "- Only recommend products that appear in the catalog. Never invent products or IDs.\n"
+        "- Pick the few genuinely best matches (usually 1-6), best first. If nothing fits, return an empty list.\n"
+        "- Always answer by calling the recommend_products tool.\n"
+        "- In `reply`, write one or two friendly, concise sentences (no markdown, no lists, no prices). If nothing "
+        "fits, say so kindly and invite the shopper to rephrase.\n"
+        "- Reply in the same language the shopper writes in.\n\n"
+        "CATALOG:\n" + _chat_catalog()
+    )
+    return [{"type": "text", "text": instructions, "cache_control": {"type": "ephemeral"}}]
+
+
+async def _chat_recommend(history: list):
+    """Call Claude; return (reply_text, [validated product indexes])."""
+    client = _get_anthropic_client()
+    resp = await client.messages.create(
+        model=CHAT_MODEL,
+        max_tokens=1024,
+        system=_chat_system(),
+        messages=history,
+        tools=[_CHAT_TOOL],
+        tool_choice={"type": "tool", "name": "recommend_products"},
+    )
+    reply, ids = "", []
+    for block in resp.content:
+        if getattr(block, "type", None) == "tool_use" and block.name == "recommend_products":
+            data = block.input or {}
+            reply = str(data.get("reply", "")).strip()
+            for value in (data.get("product_ids") or []):
+                try:
+                    idx = int(value)
+                except (TypeError, ValueError):
+                    continue
+                if idx in VISIBLE_PRODUCT_INDEXES and idx not in ids:
+                    ids.append(idx)
+            break
+    return reply, ids[:CHAT_MAX_RESULTS]
+
+
+def _chat_done_kb(context: ContextTypes.DEFAULT_TYPE) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton(_t(context, "chat_done"), callback_data="chat_exit")]]
+    )
+
+
+async def chat_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    if q:
+        await q.answer()
+    if not _chat_enabled():
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=_t(context, "chat_error"))
+        return ConversationHandler.END
+
+    context.user_data["chat_history"] = []
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=_t(context, "chat_intro"))
+    return CHAT_ACTIVE
+
+
+async def chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = (update.message.text if update.message else "") or ""
+    text = text.strip()
+    if not text:
+        return CHAT_ACTIVE
+
+    chat_id = update.effective_chat.id
+    history = context.user_data.setdefault("chat_history", [])
+    history.append({"role": "user", "content": text})
+    # Keep history bounded (user+assistant per turn).
+    if len(history) > CHAT_HISTORY_TURNS * 2:
+        del history[: len(history) - CHAT_HISTORY_TURNS * 2]
+
+    try:
+        await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+    except Exception:
+        pass
+
+    try:
+        reply, ids = await _chat_recommend(history)
+    except Exception as exc:
+        logging.warning("chat recommend failed: %s", exc)
+        history.pop()  # drop the unanswered turn so retry has a clean history
+        await context.bot.send_message(chat_id=chat_id, text=_t(context, "chat_error"),
+                                       reply_markup=_chat_done_kb(context))
+        return CHAT_ACTIVE
+
+    history.append({"role": "assistant", "content": reply or "(recommended products)"})
+
+    if not ids:
+        await context.bot.send_message(chat_id=chat_id, text=(reply or _t(context, "chat_no_matches")),
+                                       reply_markup=_chat_done_kb(context))
+        return CHAT_ACTIVE
+
+    if reply:
+        await context.bot.send_message(chat_id=chat_id, text=reply)
+    kb = [[InlineKeyboardButton(products[i].title, callback_data=f"prod_show:{i}")] for i in ids]
+    kb.append([InlineKeyboardButton(_t(context, "chat_done"), callback_data="chat_exit")])
+    await context.bot.send_message(chat_id=chat_id, text=_t(context, "chat_results"),
+                                   reply_markup=InlineKeyboardMarkup(kb))
+    return CHAT_ACTIVE
+
+
+async def chat_exit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.pop("chat_history", None)
+    if update.callback_query:
+        await update.callback_query.answer()
+    await start(update, context)
+    return ConversationHandler.END
+
+
+# ════════════════════════════════════════════════════════════════════
 #  12. BUTTON ROUTER
 # ════════════════════════════════════════════════════════════════════
 async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1207,6 +1417,24 @@ if __name__ == "__main__":
             name="wholesale_flow", persistent=True, allow_reentry=True,
         )
         app.add_handler(wholesale_conv)
+    if _chat_enabled():
+        chat_conv = ConversationHandler(
+            entry_points=[
+                CommandHandler("chat", chat_start),
+                CallbackQueryHandler(chat_start, pattern="^chat_start$"),
+            ],
+            states={
+                CHAT_ACTIVE: [MessageHandler(filters.TEXT & ~filters.COMMAND, chat_message)],
+            },
+            fallbacks=[
+                CommandHandler("done", chat_exit),
+                CommandHandler("cancel", chat_exit),
+                CallbackQueryHandler(chat_exit, pattern="^chat_exit$"),
+            ],
+            name="chat_flow", persistent=True, allow_reentry=True,
+        )
+        app.add_handler(chat_conv)
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("language", show_language_settings))
     app.add_handler(CommandHandler("broadcast", broadcast))
