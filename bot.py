@@ -17,7 +17,7 @@ Usage:
 """
 
 import html, os, json, logging, re, urllib.parse
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import (
     ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler,
     CallbackQueryHandler, ConversationHandler, PicklePersistence, filters
@@ -499,6 +499,19 @@ def _has_admin_handle() -> bool:
     return ADMIN_HANDLE.startswith("@") and len(ADMIN_HANDLE) > 1
 
 
+def _is_admin(user) -> bool:
+    if not _has_admin_handle() or not user:
+        return False
+    return (user.username or "").lower() == ADMIN_HANDLE[1:].lower()
+
+
+def _track_subscriber(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    if chat_id is None:
+        return
+    context.bot_data.setdefault("subscribers", set()).add(chat_id)
+
+
 def _default_language() -> str:
     return DEFAULT_LANGUAGE if DEFAULT_LANGUAGE in LANGUAGE_OPTIONS else "en"
 
@@ -626,6 +639,7 @@ def _start_text(context: ContextTypes.DEFAULT_TYPE) -> str:
 #  1. MAIN MENU
 # ════════════════════════════════════════════════════════════════════
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    _track_subscriber(update, context)
     language = _lang(context)
     text = _start_text(context)
     kb = []
@@ -1040,9 +1054,33 @@ async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ════════════════════════════════════════════════════════════════════
-#  10. SEARCH (semantic if enabled, otherwise keyword)
+#  10. ADMIN BROADCAST (optional — requires ADMIN_HANDLE)
+# ════════════════════════════════════════════════════════════════════
+async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_admin(update.effective_user):
+        return  # silently ignore for non-admins
+
+    message = update.message.text.partition(" ")[2].strip() if update.message else ""
+    if not message:
+        await update.message.reply_text("Usage: /broadcast <message to all users>")
+        return
+
+    subscribers = list(context.bot_data.get("subscribers", set()))
+    sent = 0
+    for chat_id in subscribers:
+        try:
+            await context.bot.send_message(chat_id=chat_id, text=message)
+            sent += 1
+        except Exception:
+            pass
+    await update.message.reply_text(f"📣 Broadcast delivered to {sent}/{len(subscribers)} users.")
+
+
+# ════════════════════════════════════════════════════════════════════
+#  11. SEARCH (semantic if enabled, otherwise keyword)
 # ════════════════════════════════════════════════════════════════════
 async def search_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    _track_subscriber(update, context)
     query_text = update.message.text if update.message else ""
     if not query_text:
         return
@@ -1064,7 +1102,7 @@ async def search_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ════════════════════════════════════════════════════════════════════
-#  11. BUTTON ROUTER
+#  12. BUTTON ROUTER
 # ════════════════════════════════════════════════════════════════════
 async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -1113,11 +1151,23 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ════════════════════════════════════════════════════════════════════
-#  12. MAIN
+#  13. MAIN
 # ════════════════════════════════════════════════════════════════════
+async def _post_init(app):
+    # Populate Telegram's "/" command menu so users see commands as they type.
+    commands = [
+        BotCommand("start", "Open the shop"),
+        BotCommand("language", "Change language"),
+    ]
+    try:
+        await app.bot.set_my_commands(commands)
+    except Exception as exc:
+        logging.warning("Could not set command menu: %s", exc)
+
+
 if __name__ == "__main__":
     persistence = PicklePersistence(filepath=PERSIST_FILE)
-    app = ApplicationBuilder().token(TOKEN).persistence(persistence).build()
+    app = ApplicationBuilder().token(TOKEN).persistence(persistence).post_init(_post_init).build()
 
     if _has_admin_handle():
         wholesale_conv = ConversationHandler(
@@ -1132,6 +1182,7 @@ if __name__ == "__main__":
         app.add_handler(wholesale_conv)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("language", show_language_settings))
+    app.add_handler(CommandHandler("broadcast", broadcast))
     app.add_handler(CallbackQueryHandler(button_router))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_products))
 

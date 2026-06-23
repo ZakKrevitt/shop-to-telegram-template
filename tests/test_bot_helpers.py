@@ -10,6 +10,21 @@ def test_admin_handle_is_optional(monkeypatch):
     assert bot._has_admin_handle() is True
 
 
+class _FakeUser:
+    def __init__(self, username):
+        self.username = username
+
+
+def test_is_admin_matches_admin_handle(monkeypatch):
+    monkeypatch.setattr(bot, "ADMIN_HANDLE", "@merchant")
+    assert bot._is_admin(_FakeUser("merchant")) is True
+    assert bot._is_admin(_FakeUser("Merchant")) is True
+    assert bot._is_admin(_FakeUser("someone_else")) is False
+
+    monkeypatch.setattr(bot, "ADMIN_HANDLE", "")
+    assert bot._is_admin(_FakeUser("merchant")) is False
+
+
 def test_checkout_url_uses_shopify_cart_when_variant_ids_exist(monkeypatch):
     monkeypatch.setattr(bot, "SHOP_URL", "https://shop.example/")
 

@@ -35,7 +35,9 @@ ecommerce URL ──▶ scraper.py ──▶ products.json / sections.json ─�
 - Variant + quantity selectors feeding an in-bot cart
 - Multi-language UI (English, German, Spanish, Portuguese, Dutch)
 - Keyword search out of the box; optional semantic search
-- Optional wholesale inquiry flow (enabled only when `ADMIN_HANDLE` is set)
+- Telegram "/" command menu (auto-registered: `/start`, `/language`)
+- Optional admin tools when `ADMIN_HANDLE` is set: wholesale inquiry flow and an
+  admin-only `/broadcast <message>` that messages everyone who has used the bot
 - Optional compliance keyword filter for regulated stores
 
 ## Quickstart (local)
