@@ -66,6 +66,7 @@ def test_scrapes_shopify_products_endpoint():
     assert products[0].variant_id == "555"
     assert products[0].url == "https://shop.example/products/canvas-tote"
     assert products[0].categories == ["bags"]
+    assert products[0].category_label == "Bags"
     assert products[0].images == ["https://cdn.example/tote.jpg"]
     assert products[0].options == [{"name": "Size", "values": ["Small", "Large"]}]
     assert products[0].variants[0]["title"] == "Small"
@@ -152,7 +153,6 @@ def test_scrape_site_sections_from_sitemaps():
     sections = scrape_site_sections("https://shop.example", session=session)
 
     assert sections == [
-        {"title": "About & Philosophy", "url": "https://shop.example/pages/about-us"},
-        {"title": "Set & Setting", "url": "https://shop.example/collections/set-setting"},
+        {"title": "About", "url": "https://shop.example/pages/about-us"},
         {"title": "FAQ", "url": "https://shop.example/pages/faq"},
     ]

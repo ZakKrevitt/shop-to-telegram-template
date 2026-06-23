@@ -1,18 +1,44 @@
-# create-tg-shop
+# shop-to-telegram-template
 
-Turn an ecommerce link into a Telegram storefront bot. The bot scrapes a starter product catalog, lets customers browse/search/add to cart in Telegram, then sends checkout back to the merchant's original store.
+Turn any ecommerce link into a Telegram storefront bot. The bot scrapes a
+product catalog, lets customers browse by category, search, and add to a cart
+inside Telegram, then hands checkout back to the merchant's own store.
 
-## Payment model
+Nothing in this template is tied to a specific shop or product vertical —
+categories, copy, and branding are all derived from the store or set via
+environment variables. Point it at a clothing shop, an electronics store, or a
+coffee roaster and it adapts.
 
-This template does not route sales through a platform Stripe Connect account, create connected accounts, or collect an application fee.
+## How it works
 
-Checkout works by deep-linking to the source store:
+```
+ecommerce URL ──▶ scraper.py ──▶ products.json / sections.json ──▶ bot.py ──▶ Telegram
+                                                                        │
+                                                       checkout deep-link back to store
+```
 
-- Shopify products with variant IDs link to `SHOP_URL/cart/{variant_id}:{qty}`
-- Other stores link to the product page or configured `SHOP_URL`
-- If the merchant's own Shopify checkout uses Stripe, Shopify Payments, PayPal, or another processor, that happens inside the merchant-owned checkout
+- **Scraper** tries Shopify's public `/products.json` endpoint first (richest
+  data: variants, images, options), then falls back to JSON-LD and OpenGraph
+  product metadata on the page.
+- **Categories** are derived from the store's own taxonomy (Shopify
+  `product_type`, then tags) — no hard-coded verticals.
+- **Checkout** deep-links to the source store. Shopify carts use
+  `SHOP_URL/cart/{variant_id}:{qty}`; other stores link to the product page.
+  Payment happens entirely inside the merchant's own checkout — no platform
+  Stripe account, connected accounts, or application fees.
 
-## Quickstart
+## Bot features
+
+- Start screen with banner image, dynamic category grid, "All Items", cart,
+  site sections, language switcher, and an "Open Store" link
+- Product cards with image, price, description, and variant options
+- Variant + quantity selectors feeding an in-bot cart
+- Multi-language UI (English, German, Spanish, Portuguese, Dutch)
+- Keyword search out of the box; optional semantic search
+- Optional wholesale inquiry flow (enabled only when `ADMIN_HANDLE` is set)
+- Optional compliance keyword filter for regulated stores
+
+## Quickstart (local)
 
 ```bash
 git clone https://github.com/ZakKrevitt/shop-to-telegram-template.git
@@ -20,28 +46,34 @@ cd shop-to-telegram-template
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r REQUIREMENTS.txt
-python wizard.py
+python wizard.py        # asks for ecommerce link + bot token, then scrapes
 python bot.py
 ```
 
-The wizard asks for:
+The wizard writes `.env`, scrapes `products.json` and `sections.json`, and
+leaves the bot ready to run. See `.env.example` for every supported variable.
 
-- Ecommerce link
-- Telegram bot token from `@BotFather`
-- Shop name
-- Optional admin Telegram handle for wholesale inquiries
+## Deploy on Railway
 
-It writes `.env`, scrapes products into `products.json`, scrapes website section links into `sections.json`, and leaves the bot ready to run.
+There are two ways to get a hosted, always-on bot.
 
-## One-line installer
+### A. Self-serve via the deploy API (no local CLI)
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/ZakKrevitt/shop-to-telegram-template/main/install.sh | bash
-```
+The bot **scrapes its catalog on boot** when `products.json` is empty and
+`SHOP_URL` is set. That means you can create a Railway service straight from
+this GitHub repo with just two variables and it comes up populated:
 
-## One-shot Railway deploy
+| Variable | Value |
+| --- | --- |
+| `BOT_TOKEN` | token from `@BotFather` |
+| `SHOP_URL` | the store to mirror |
+| `SHOP_NAME` | (optional) display name |
 
-For each new client, create a Telegram bot with `@BotFather`, get the client's ecommerce link, then run:
+This is what the companion self-serve front-end automates: a user submits a bot
+token + store URL, and a serverless function provisions a Railway service from
+this repo via the Railway GraphQL API.
+
+### B. One-shot CLI deploy
 
 ```bash
 python scripts/deploy_client.py \
@@ -50,50 +82,37 @@ python scripts/deploy_client.py \
   --shop-name "Merchant Shop"
 ```
 
-The script prompts for the bot token securely. For automation, pass `--bot-token` or set `BOT_TOKEN` in the shell environment.
+The script copies the template into a temp build, scrapes the catalog, creates
+a Railway project + service, stores the variables, and runs `railway up`. The
+bot token is read securely and never committed. Use `--dry-run` to preview the
+Railway commands. Requires the Railway CLI logged in (`railway login`).
 
-The deploy script:
+## Repository layout
 
-- Copies the template into a temporary client build directory
-- Scrapes `products.json` and `sections.json` from the ecommerce link
-- Creates a new Railway project and bot service
-- Stores `BOT_TOKEN`, `SHOP_URL`, `SHOP_NAME`, and optional `ADMIN_HANDLE` as Railway variables
-- Deploys the bot with `railway up --detach`
-
-The bot token is never committed to git. Railway runs the service as an always-on worker using `railway.json`; no public domain is required because the bot connects outbound to Telegram.
-
-Prerequisites:
-
-- Railway CLI installed and logged in with `railway login`
-- A Telegram bot token from `@BotFather`
-- The ecommerce link to scrape
-
-Use `--dry-run` to print the Railway commands without creating a project.
-
-## What it sets up
-
-- `wizard.py` - collects the ecommerce link and Telegram config
-- `scraper.py` - best-effort Shopify, JSON-LD, and OpenGraph product scraper
-- `products.json` - product catalog used by the bot
-- `sections.json` - optional website section links surfaced in the bot
-- `bot.py` - Telegram storefront with curated categories, product cards, images, variants, cart, source-store checkout links, per-user language settings, search, and wholesale inquiries
-- `assets/start-banner.png` - default start-screen banner image
-- `.env` - local bot/shop configuration
-- `railway.json` - always-on Railway worker config
-- `scripts/deploy_client.py` - one-command per-client Railway deployment
+| Path | Purpose |
+| --- | --- |
+| `bot.py` | Telegram storefront (menus, cards, cart, search, languages) |
+| `scraper.py` | Shopify / JSON-LD / OpenGraph product + section scraper |
+| `wizard.py` | Interactive local setup (writes `.env`, scrapes catalog) |
+| `scripts/deploy_client.py` | One-command per-client Railway deploy |
+| `products.json` | Product catalog the bot serves (sample shipped) |
+| `sections.json` | Info-page links shown in "Site Sections" |
+| `assets/start-banner.png` | Default start-screen banner |
+| `railway.json` / `Dockerfile` | Always-on Railway worker config |
+| `.env.example` | All supported environment variables |
 
 ## Environment variables
 
-```bash
-BOT_TOKEN=123456:telegram-token
-SHOP_URL=https://merchant-shop.com
-SHOP_NAME=Merchant Shop
-ADMIN_HANDLE=@merchant_admin
-BANNER_IMG=/absolute/path/to/banner.jpg
-DEFAULT_LANGUAGE=en
-```
+Required: `BOT_TOKEN`, `SHOP_URL`. Recommended: `SHOP_NAME`. Everything else is
+optional — see `.env.example`:
 
-`ADMIN_HANDLE` can be omitted; the bot hides wholesale inquiry actions when it is not set. `BANNER_IMG` is optional and defaults to `assets/start-banner.png`. `DEFAULT_LANGUAGE` can be `en` or `de`; users can still adjust their own language from the bot menu. `TELEGRAM_BOT_TOKEN` is still accepted for older local installs, but new setup writes `BOT_TOKEN`.
+- `ADMIN_HANDLE` — enables the wholesale inquiry flow (hidden when unset)
+- `SHOP_TAGLINE` — overrides the welcome blurb on the start screen
+- `SHOP_BADGES` — a trust-badge strip under the welcome text
+- `BANNER_IMG` — path or URL to the start banner (defaults to the bundled image)
+- `DEFAULT_LANGUAGE` — `en` | `de` | `es` | `pt` | `nl` (users can change it in-bot)
+- `ENABLE_SEMANTIC_SEARCH` — `1` to use sentence-transformers + FAISS
+- `RESTRICTED_KEYWORDS` — comma-separated terms to hide from the bot (regulated stores)
 
 ## Scraping manually
 
@@ -101,28 +120,32 @@ DEFAULT_LANGUAGE=en
 python scraper.py https://merchant-shop.com --output products.json --sections-output sections.json
 ```
 
-The scraper tries Shopify's public `products.json` endpoint first, then falls back to product metadata on the provided page. If no products are detected, edit `products.json` manually or try a more specific collection/product URL.
-
-Default supplement/extract category buckets are Botanical Extracts, CBD & Hemp, Functional Mushrooms, Set & Setting, Books & Guides, and Research Extracts. Research Extracts is the fallback for non-restricted supplement/extract items that do not clearly fit another bucket.
-
-## Safety guardrails
-
-The template does not rename restricted products to bypass platform rules. It keeps the scraped source catalog auditable, then filters restricted/research-compound keyword matches out of Telegram category menus, search, product detail, variant selection, cart, and checkout callbacks. If any restricted products are detected, the broad start-menu store link is hidden; product-specific source-store links remain available only for visible products.
+If no products are detected, edit `products.json` by hand or try a more specific
+collection/product URL.
 
 ## Optional semantic search
 
-The hosted default uses lightweight keyword search. To enable semantic search locally or in a custom Railway build, install the optional packages and set `ENABLE_SEMANTIC_SEARCH=true`:
+The default uses lightweight keyword search. To enable semantic search, install
+the optional packages and set `ENABLE_SEMANTIC_SEARCH=1`:
 
 ```bash
 pip install -r requirements-semantic.txt
 ```
 
-## Customizing
+## Compliance filter (optional)
 
-- Replace `products.json` with a hand-curated catalog if scraping is incomplete
-- Customize Telegram copy/buttons in `bot.py`
-- Add persistence for carts if the bot needs multi-device or long-lived sessions
-- Add fulfillment/order webhooks in the merchant's own ecommerce platform
+For regulated stores, set `RESTRICTED_KEYWORDS` to a comma-separated list. Any
+product whose title, description, tags, or categories match a keyword is hidden
+from category menus, search, product detail, cart, and checkout. When the filter
+hides anything, the broad start-menu store link is suppressed. The catalog in
+`products.json` stays auditable — products are filtered, never renamed.
+
+## Tests
+
+```bash
+python -m pytest
+python -m compileall bot.py scraper.py wizard.py scripts/deploy_client.py
+```
 
 ## License
 

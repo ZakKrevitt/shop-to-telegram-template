@@ -1,13 +1,18 @@
 """
-🛍️ Boutique Telegram Commerce Bot — shop-to-telegram-template
-===============================================================
-Drop-in Telegram bot with category browsing, product cards, cart,
-search, and wholesale inquiry flow.
+🛍️ Shop-to-Telegram bot template
+=================================
+Drop-in Telegram storefront for any ecommerce site: banner start screen,
+auto-derived category menus, product cards with images and variants, an
+in-bot cart, multi-language UI, keyword/semantic search, and an optional
+wholesale inquiry flow. Checkout hands off to the merchant's own store.
+
+Configuration is entirely environment-driven — nothing in this file is tied
+to a specific shop or product vertical.
 
 Usage:
   1. pip install -r REQUIREMENTS.txt
-  2. Set BOT_TOKEN env var or run python wizard.py
-  3. Create products.json using scraper.py (or hand-write)
+  2. Set BOT_TOKEN and SHOP_URL (or run python wizard.py)
+  3. Create products.json with scraper.py, or let the bot scrape on boot
   4. python3 bot.py
 """
 
@@ -43,10 +48,15 @@ TOKEN        = os.environ.get("BOT_TOKEN") or os.environ.get("TELEGRAM_BOT_TOKEN
 ADMIN_HANDLE = os.environ.get("ADMIN_HANDLE", "")
 SHOP_NAME    = os.environ.get("SHOP_NAME", "Your Shop")
 SHOP_URL     = os.environ.get("SHOP_URL", "https://your-shop.com")
+SHOP_TAGLINE = os.environ.get("SHOP_TAGLINE", "")   # overrides the welcome blurb
+SHOP_BADGES  = os.environ.get("SHOP_BADGES", "")    # e.g. "🚚 Free shipping  ·  💳 Cards accepted"
 DEFAULT_BANNER_IMG = os.path.join(ROOT_DIR, "assets", "start-banner.png")
 BANNER_IMG   = os.environ.get("BANNER_IMG") or DEFAULT_BANNER_IMG
 DEFAULT_LANGUAGE = os.environ.get("DEFAULT_LANGUAGE", "en").lower()
 ENABLE_SEMANTIC_SEARCH = os.environ.get("ENABLE_SEMANTIC_SEARCH", "").lower() in {"1", "true", "yes", "on"}
+# Optional compliance filter — comma-separated keywords hidden from the bot.
+# Empty by default; set RESTRICTED_KEYWORDS for regulated stores.
+RESTRICTED_KEYWORDS = {kw.strip().lower() for kw in os.environ.get("RESTRICTED_KEYWORDS", "").split(",") if kw.strip()}
 PERSIST_FILE = os.path.join(ROOT_DIR, "bot_persistence.pickle")
 PRODUCTS_FILE = os.path.join(ROOT_DIR, "products.json")
 SECTIONS_FILE = os.path.join(ROOT_DIR, "sections.json")
@@ -55,10 +65,43 @@ logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=lo
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("telegram").setLevel(logging.WARNING)
 
+
 # ── LOAD CATALOG ────────────────────────────────────────────────────
-products = load_products(PRODUCTS_FILE)
+def _bootstrap_catalog() -> list:
+    """Load products.json, or scrape SHOP_URL on first boot if it is empty.
+
+    This lets a fresh deploy come up with only BOT_TOKEN + SHOP_URL set,
+    with no local wizard step required.
+    """
+    existing = load_products(PRODUCTS_FILE)
+    if existing:
+        return existing
+
+    placeholder = (not SHOP_URL) or "your-shop.com" in SHOP_URL
+    if placeholder:
+        return existing
+
+    logging.info("No catalog found — scraping %s on boot...", SHOP_URL)
+    try:
+        from scraper import ShopScraper, save_products, save_site_sections, scrape_site_sections
+
+        scraped = ShopScraper(SHOP_URL).scrape()
+        save_products(scraped, PRODUCTS_FILE)
+        try:
+            save_site_sections(scrape_site_sections(SHOP_URL), SECTIONS_FILE)
+        except Exception:
+            pass
+        logging.info("Boot scrape complete: %d products.", len(scraped))
+        return scraped
+    except Exception as exc:
+        logging.warning("Boot scrape failed (%s); starting with empty catalog.", exc)
+        return existing
+
+
+products = _bootstrap_catalog()
 if not products:
-    logging.warning("No products loaded! Check products.json")
+    logging.warning("No products loaded! Set SHOP_URL or populate products.json")
+
 
 def _load_site_sections(filepath: str) -> list:
     try:
@@ -76,44 +119,18 @@ def _load_site_sections(filepath: str) -> list:
 
 SITE_SECTIONS = _load_site_sections(SECTIONS_FILE)
 
-CATEGORY_LABELS = {
-    "botanical-extracts": {"en": "🌿 Botanical Extracts", "de": "🌿 Botanical Extracts"},
-    "functional-mushrooms": {"en": "🍄 Functional Mushrooms", "de": "🍄 Functional Mushrooms"},
-    "cbd-hemp": {"en": "🌱 CBD & Hemp", "de": "🌱 CBD & Hemp"},
-    "set-setting": {"en": "🕯️ Set & Setting", "de": "🕯️ Set & Setting"},
-    "books-media": {"en": "📚 Books & Guides", "de": "📚 Books & Guides"},
-    "research-extracts": {"en": "🧪 Research Extracts", "de": "🧪 Research Extracts"},
-}
-
-CATEGORY_ALIASES = {
-    "botanical-extract": "botanical-extracts",
-    "botanical-extracts": "botanical-extracts",
-    "mushrooms": "functional-mushrooms",
-    "functional-mushrooms": "functional-mushrooms",
-    "cbd": "cbd-hemp",
-    "cbd-hemp": "cbd-hemp",
-    "hemp": "cbd-hemp",
-    "home": "set-setting",
-    "home-goods": "set-setting",
-    "lighting": "set-setting",
-    "set-setting": "set-setting",
-    "books": "books-media",
-    "books-media": "books-media",
-    "research-extract": "research-extracts",
-    "research-extracts": "research-extracts",
-    "supplement": "research-extracts",
-    "supplements": "research-extracts",
-}
-
 LANGUAGE_OPTIONS = {
     "en": "English",
     "de": "Deutsch",
+    "es": "Español",
+    "pt": "Português",
+    "nl": "Nederlands",
 }
 
 TEXT = {
     "en": {
-        "start": "🌿 *{shop_name}*\n\nBrowse the shop, open site sections, change language, or type what you are looking for.",
-        "empty_catalog": "🌿 *{shop_name}*\n\nThe catalog is empty right now.",
+        "welcome": "Browse the catalog below, or just type what you're looking for.",
+        "empty_catalog": "The catalog is empty right now.",
         "all_items": "🗺️ All Items",
         "view_cart": "🛒 View Cart",
         "site_sections": "📖 Site Sections",
@@ -158,12 +175,12 @@ TEXT = {
         "wholesale_title": "🏢 *Wholesale: {product}*\n\nSelect quantity range:",
         "location_prompt": "🌍 *Where are you located?*",
         "submit_inquiry": "📤 Submit Inquiry",
-        "review": "📋 *Review:*\n🧫 {product}\n🔢 {qty}\n📍 {location}\n\nReady to submit?",
+        "review": "📋 *Review:*\n📦 {product}\n🔢 {qty}\n📍 {location}\n\nReady to submit?",
         "cancelled": "Cancelled.",
     },
     "de": {
-        "start": "🌿 *{shop_name}*\n\nStöbere im Shop, öffne Seitenbereiche, ändere die Sprache oder tippe, wonach du suchst.",
-        "empty_catalog": "🌿 *{shop_name}*\n\nDer Katalog ist im Moment leer.",
+        "welcome": "Stöbere unten im Katalog oder tippe einfach, wonach du suchst.",
+        "empty_catalog": "Der Katalog ist im Moment leer.",
         "all_items": "🗺️ Alle Artikel",
         "view_cart": "🛒 Warenkorb",
         "site_sections": "📖 Website-Bereiche",
@@ -208,30 +225,159 @@ TEXT = {
         "wholesale_title": "🏢 *Wholesale: {product}*\n\nMengenbereich auswählen:",
         "location_prompt": "🌍 *Wo bist du?*",
         "submit_inquiry": "📤 Anfrage senden",
-        "review": "📋 *Prüfen:*\n🧫 {product}\n🔢 {qty}\n📍 {location}\n\nBereit zum Senden?",
+        "review": "📋 *Prüfen:*\n📦 {product}\n🔢 {qty}\n📍 {location}\n\nBereit zum Senden?",
         "cancelled": "Abgebrochen.",
     },
-}
-
-RESTRICTED_KEYWORDS = {
-    "psilocybin",
-    "psilocin",
-    "psilocybe",
-    "psilos",
-    "magic mushroom",
-    "spore",
-    "spores",
-    "grow kit",
-    "lsd",
-    "dmt",
-    "nysion",
-    "solyra",
-    "4-pro-met",
-    "tryptamine",
-    "lysergamide",
-    "phenethylamine",
-    "research-chemical",
-    "research chemical",
+    "es": {
+        "welcome": "Explora el catálogo abajo o escribe lo que buscas.",
+        "empty_catalog": "El catálogo está vacío por ahora.",
+        "all_items": "🗺️ Todos los artículos",
+        "view_cart": "🛒 Ver carrito",
+        "site_sections": "📖 Secciones del sitio",
+        "settings": "⚙️ Ajustes",
+        "language": "🌐 Idioma",
+        "open_store": "🌐 Abrir tienda",
+        "back": "⬅️ Atrás",
+        "back_to_shop": "⬅️ Volver a la tienda",
+        "cancel": "⬅️ Cancelar",
+        "no_items": "No se encontraron artículos.",
+        "tap_to_view": "Toca para ver:",
+        "sections_title": "Secciones de {shop_name}",
+        "no_sections": "Aún no hay secciones del sitio configuradas.",
+        "restricted": "Este artículo no está disponible a través del bot de Telegram.",
+        "checkout_site": "🌐 Pagar en el sitio",
+        "checkout_site_count": "🌐 Pagar en el sitio ({count} artículos)",
+        "choose_option": "🛒 Elegir opción",
+        "add_to_cart": "🛒 Añadir al carrito",
+        "sold_out": "Agotado",
+        "view_online": "🌐 Ver en línea",
+        "wholesale": "🏢 Mayorista",
+        "share": "📤 Compartir",
+        "price": "Precio",
+        "description": "Descripción",
+        "options": "Opciones:",
+        "more_on_site": "+{count} más en el sitio web",
+        "choose_option_for": "Elige una opción para {product}:",
+        "select_quantity": "{product}\n{option}\n\nSelecciona la cantidad:",
+        "option_sold_out": "Esa opción está agotada.",
+        "not_available_alert": "Este artículo no está disponible en el bot.",
+        "cart_empty": "Tu carrito está vacío.",
+        "cart_title": "🛒 *Tu carrito — {shop_name}*\n━━━━━━━━━━━━━━",
+        "total": "💰 *Total: {amount}*",
+        "clear_cart": "🪟 Vaciar carrito",
+        "cart_cleared": "¡Carrito vaciado!",
+        "added": "¡{qty}x añadido! 🛒",
+        "nothing_found": "No se encontró nada. Prueba a explorar las categorías.",
+        "settings_title": "Ajustes",
+        "choose_language": "Elige idioma:",
+        "language_saved": "Idioma configurado en {language}.",
+        "wholesale_not_configured": "Las consultas de mayorista no están configuradas para esta tienda.",
+        "wholesale_title": "🏢 *Mayorista: {product}*\n\nSelecciona el rango de cantidad:",
+        "location_prompt": "🌍 *¿Dónde te encuentras?*",
+        "submit_inquiry": "📤 Enviar consulta",
+        "review": "📋 *Revisar:*\n📦 {product}\n🔢 {qty}\n📍 {location}\n\n¿Listo para enviar?",
+        "cancelled": "Cancelado.",
+    },
+    "pt": {
+        "welcome": "Explora o catálogo abaixo ou escreve o que procuras.",
+        "empty_catalog": "O catálogo está vazio de momento.",
+        "all_items": "🗺️ Todos os artigos",
+        "view_cart": "🛒 Ver carrinho",
+        "site_sections": "📖 Secções do site",
+        "settings": "⚙️ Definições",
+        "language": "🌐 Idioma",
+        "open_store": "🌐 Abrir loja",
+        "back": "⬅️ Voltar",
+        "back_to_shop": "⬅️ Voltar à loja",
+        "cancel": "⬅️ Cancelar",
+        "no_items": "Nenhum artigo encontrado.",
+        "tap_to_view": "Toca para ver:",
+        "sections_title": "Secções de {shop_name}",
+        "no_sections": "Ainda não há secções do site configuradas.",
+        "restricted": "Este artigo não está disponível através do bot do Telegram.",
+        "checkout_site": "🌐 Finalizar no site",
+        "checkout_site_count": "🌐 Finalizar no site ({count} artigos)",
+        "choose_option": "🛒 Escolher opção",
+        "add_to_cart": "🛒 Adicionar ao carrinho",
+        "sold_out": "Esgotado",
+        "view_online": "🌐 Ver online",
+        "wholesale": "🏢 Grossista",
+        "share": "📤 Partilhar",
+        "price": "Preço",
+        "description": "Descrição",
+        "options": "Opções:",
+        "more_on_site": "+{count} mais no site",
+        "choose_option_for": "Escolhe uma opção para {product}:",
+        "select_quantity": "{product}\n{option}\n\nSeleciona a quantidade:",
+        "option_sold_out": "Essa opção está esgotada.",
+        "not_available_alert": "Este artigo não está disponível no bot.",
+        "cart_empty": "O teu carrinho está vazio.",
+        "cart_title": "🛒 *O teu carrinho — {shop_name}*\n━━━━━━━━━━━━━━",
+        "total": "💰 *Total: {amount}*",
+        "clear_cart": "🪟 Esvaziar carrinho",
+        "cart_cleared": "Carrinho esvaziado!",
+        "added": "{qty}x adicionado! 🛒",
+        "nothing_found": "Nada encontrado. Tenta explorar as categorias.",
+        "settings_title": "Definições",
+        "choose_language": "Escolhe o idioma:",
+        "language_saved": "Idioma definido para {language}.",
+        "wholesale_not_configured": "As consultas de grossista não estão configuradas para esta loja.",
+        "wholesale_title": "🏢 *Grossista: {product}*\n\nSeleciona o intervalo de quantidade:",
+        "location_prompt": "🌍 *Onde te encontras?*",
+        "submit_inquiry": "📤 Enviar consulta",
+        "review": "📋 *Rever:*\n📦 {product}\n🔢 {qty}\n📍 {location}\n\nPronto para enviar?",
+        "cancelled": "Cancelado.",
+    },
+    "nl": {
+        "welcome": "Blader hieronder door de catalogus of typ gewoon waar je naar op zoek bent.",
+        "empty_catalog": "De catalogus is op dit moment leeg.",
+        "all_items": "🗺️ Alle artikelen",
+        "view_cart": "🛒 Winkelwagen bekijken",
+        "site_sections": "📖 Sitesecties",
+        "settings": "⚙️ Instellingen",
+        "language": "🌐 Taal",
+        "open_store": "🌐 Winkel openen",
+        "back": "⬅️ Terug",
+        "back_to_shop": "⬅️ Terug naar de winkel",
+        "cancel": "⬅️ Annuleren",
+        "no_items": "Geen artikelen gevonden.",
+        "tap_to_view": "Tik om te bekijken:",
+        "sections_title": "{shop_name} secties",
+        "no_sections": "Er zijn nog geen sitesecties geconfigureerd.",
+        "restricted": "Dit artikel is niet beschikbaar via de Telegram-bot.",
+        "checkout_site": "🌐 Afrekenen op de site",
+        "checkout_site_count": "🌐 Afrekenen op de site ({count} artikelen)",
+        "choose_option": "🛒 Optie kiezen",
+        "add_to_cart": "🛒 In winkelwagen",
+        "sold_out": "Uitverkocht",
+        "view_online": "🌐 Online bekijken",
+        "wholesale": "🏢 Groothandel",
+        "share": "📤 Delen",
+        "price": "Prijs",
+        "description": "Beschrijving",
+        "options": "Opties:",
+        "more_on_site": "+{count} meer op de website",
+        "choose_option_for": "Kies een optie voor {product}:",
+        "select_quantity": "{product}\n{option}\n\nSelecteer aantal:",
+        "option_sold_out": "Die optie is uitverkocht.",
+        "not_available_alert": "Dit artikel is niet beschikbaar in de bot.",
+        "cart_empty": "Je winkelwagen is leeg.",
+        "cart_title": "🛒 *Jouw winkelwagen — {shop_name}*\n━━━━━━━━━━━━━━",
+        "total": "💰 *Totaal: {amount}*",
+        "clear_cart": "🪟 Winkelwagen legen",
+        "cart_cleared": "Winkelwagen geleegd!",
+        "added": "{qty}x toegevoegd! 🛒",
+        "nothing_found": "Niets gevonden. Probeer door categorieën te bladeren.",
+        "settings_title": "Instellingen",
+        "choose_language": "Kies taal:",
+        "language_saved": "Taal ingesteld op {language}.",
+        "wholesale_not_configured": "Groothandelaanvragen zijn niet geconfigureerd voor deze winkel.",
+        "wholesale_title": "🏢 *Groothandel: {product}*\n\nSelecteer hoeveelheidsbereik:",
+        "location_prompt": "🌍 *Waar bevind je je?*",
+        "submit_inquiry": "📤 Aanvraag verzenden",
+        "review": "📋 *Controleren:*\n📦 {product}\n🔢 {qty}\n📍 {location}\n\nKlaar om te verzenden?",
+        "cancelled": "Geannuleerd.",
+    },
 }
 
 
@@ -246,57 +392,35 @@ def _product_text(product) -> str:
     ).lower()
 
 
-def _is_book_or_media(product) -> bool:
-    text = _product_text(product)
-    return any(keyword in text for keyword in ["book", "buch", "albert hofmann", "lucys", "fear and loathing", "plant magic", "future is fungi", "mushroom people", "alice", "wonderland", "breaking open the head", "daniel pinchbeck"])
-
-
 def _is_restricted_product(product) -> bool:
-    if _is_book_or_media(product):
+    if not RESTRICTED_KEYWORDS:
         return False
     return any(keyword in _product_text(product) for keyword in RESTRICTED_KEYWORDS)
 
 
 def _normalize_category(value: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", str(value or "").lower()).strip("-")
-    return CATEGORY_ALIASES.get(slug, slug)
+    return re.sub(r"[^a-z0-9]+", "-", str(value or "").lower()).strip("-")
 
 
 def _category_for_product(product) -> str:
-    categories = [
-        _normalize_category(cat)
-        for cat in (product.categories or [])
-        if cat and _normalize_category(cat) != "products"
-    ]
-    for category in categories:
-        if category in CATEGORY_LABELS:
-            return category
-
-    text = _product_text(product)
-    if any(keyword in text for keyword in ["cbd", "hemp", "hhc", "10hc", "pre-roll", "pot-pourri"]):
-        return "cbd-hemp"
-    if any(keyword in text for keyword in ["cordyceps", "shiitake", "lion", "reishi", "chaga", "mushroom extract"]):
-        return "functional-mushrooms"
-    if _is_book_or_media(product):
-        return "books-media"
-    if any(keyword in text for keyword in ["kanna", "mulungu", "blue lotus", "rapé", "rape", "kratom", "rockrose"]):
-        return "botanical-extracts"
-    if any(keyword in text for keyword in ["candle", "pipe", "palo santo", "smudge", "sage", "pine", "set-setting", "lighting"]):
-        return "set-setting"
-    if any(keyword in text for keyword in ["supplement", "extract", "tincture", "tablet", "capsule", "powder", "liquid", "amanita", "mamba", "pflanzenextrakt", "plant extract"]):
-        return "research-extracts"
-    return "research-extracts"
+    for cat in (product.categories or []):
+        slug = _normalize_category(cat)
+        if slug and slug != "products":
+            return slug
+    return "shop"
 
 
 VISIBLE_PRODUCT_INDEXES = [idx for idx, product in enumerate(products) if not _is_restricted_product(product)]
 HAS_RESTRICTED_PRODUCTS = len(VISIBLE_PRODUCT_INDEXES) < len(products)
 
-# Derive categories from visible products
+# Derive category slugs + display labels from the visible catalog itself.
+CATEGORY_LABELS = {}
 CAT_NAMES = {}
 for idx in VISIBLE_PRODUCT_INDEXES:
     cat = _category_for_product(products[idx])
-    if cat not in CAT_NAMES:
-        CAT_NAMES[cat] = cat
+    if cat not in CATEGORY_LABELS:
+        CATEGORY_LABELS[cat] = getattr(products[idx], "category_label", "") or cat.replace("-", " ").title()
+    CAT_NAMES.setdefault(cat, cat)
 
 # ── SEMANTIC SEARCH ─────────────────────────────────────────────────
 _model = None
@@ -397,12 +521,8 @@ def _language_name(language: str) -> str:
 
 
 def _category_label(cat: str, language: str = "en") -> str:
-    label = CATEGORY_LABELS.get(cat)
-    if isinstance(label, dict):
-        return label.get(language) or label.get("en") or cat.replace("-", " ").title()
-    if label:
-        return label
-    return f"🏷️ {cat.replace('-', ' ').title()}"
+    # Category labels come from the store's own taxonomy, so they are not translated.
+    return CATEGORY_LABELS.get(cat) or f"🏷️ {cat.replace('-', ' ').title()}"
 
 
 def _available_variants(product) -> list:
@@ -497,12 +617,17 @@ def _keyword_search(query_text: str, limit: int = 5) -> list:
     return [idx for _, idx in scored[:limit]]
 
 
+def _start_text(context: ContextTypes.DEFAULT_TYPE) -> str:
+    body = SHOP_TAGLINE or _t(context, "welcome")
+    return f"🛍️ *{SHOP_NAME}*\n\n{body}"
+
+
 # ════════════════════════════════════════════════════════════════════
 #  1. MAIN MENU
 # ════════════════════════════════════════════════════════════════════
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     language = _lang(context)
-    text = _t(context, "start", shop_name=SHOP_NAME)
+    text = _start_text(context)
     kb = []
     cat_items = list(CAT_NAMES.items())
     for i in range(0, len(cat_items), 2):
@@ -517,7 +642,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton(_t(context, "site_sections"), callback_data="sections_show"),
         ])
     else:
-        text = _t(context, "empty_catalog", shop_name=SHOP_NAME)
+        text = f"🛍️ *{SHOP_NAME}*\n\n{_t(context, 'empty_catalog')}"
+    if SHOP_BADGES:
+        text = f"{text}\n\n{SHOP_BADGES}"
     if SITE_SECTIONS and not VISIBLE_PRODUCT_INDEXES:
         kb.append([InlineKeyboardButton(_t(context, "site_sections"), callback_data="sections_show")])
     kb.append([InlineKeyboardButton(_t(context, "language"), callback_data="lang_show")])
@@ -568,7 +695,7 @@ async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE, cat:
     header = f"{_category_label(cat, language)} ({len(matching)} items)\n\n{_t(context, 'tap_to_view')}"
     kb = []
     for idx, p in matching[:20]:
-        kb.append([InlineKeyboardButton(f"{p.title} — {_fmt_price(p.price)}", callback_data=f"prod_show:{idx}")])
+        kb.append([InlineKeyboardButton(p.title, callback_data=f"prod_show:{idx}")])
     kb.append([InlineKeyboardButton(_t(context, "back"), callback_data="cat:start_mock")])
     if q:
         if q.message.caption:
@@ -810,7 +937,7 @@ async def clear_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ════════════════════════════════════════════════════════════════════
-#  8. WHOLESALE FLOW
+#  8. WHOLESALE FLOW (optional — only active when ADMIN_HANDLE is set)
 # ════════════════════════════════════════════════════════════════════
 async def wholesale_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -838,8 +965,8 @@ async def wholesale_qty(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["wholesale_qty"] = q.data.split(":")[1]
     text = _t(context, "location_prompt")
     kb = [
-        [InlineKeyboardButton("🇩🇪 Berlin", callback_data="loc:Berlin"),
-         InlineKeyboardButton("🇪🇺 EU", callback_data="loc:EU")],
+        [InlineKeyboardButton("🇪🇺 Europe", callback_data="loc:Europe"),
+         InlineKeyboardButton("🇺🇸 North America", callback_data="loc:North America")],
         [InlineKeyboardButton("🌍 International", callback_data="loc:International")],
     ]
     await context.bot.send_message(chat_id=update.effective_chat.id, text=text,
@@ -856,7 +983,7 @@ async def wholesale_loc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     inquiry = (
         f"📬 NEW WHOLESALE INQUIRY\n"
         f"━━━━━━━━━━━━━━\n"
-        f"🧫 {prod}\n🔢 {qty}\n📍 {loc}\n"
+        f"📦 {prod}\n🔢 {qty}\n📍 {loc}\n"
         f"👤 @{user.username} ({user.first_name})\n"
         f"━━━━━━━━━━━━━━"
     )
@@ -913,7 +1040,7 @@ async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ════════════════════════════════════════════════════════════════════
-#  10. SEMANTIC SEARCH
+#  10. SEARCH (semantic if enabled, otherwise keyword)
 # ════════════════════════════════════════════════════════════════════
 async def search_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query_text = update.message.text if update.message else ""

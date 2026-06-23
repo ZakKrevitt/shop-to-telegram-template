@@ -23,81 +23,74 @@ def test_checkout_url_uses_shopify_cart_when_variant_ids_exist(monkeypatch):
     assert checkout_url == "https://shop.example/cart/111:2,222:1"
 
 
-def test_restricted_products_are_filtered_not_renamed():
-    product = Product(
-        id="1",
-        name="1Fe-LSD Legal Tab",
-        title="1Fe-LSD Legal Tab",
-        description="Research compound",
-        price="€10.00",
-    )
-
-    assert bot._is_restricted_product(product) is True
-
-
-def test_books_with_restricted_terms_are_allowed_as_media():
-    product = Product(
-        id="2",
-        name="Albert Hofmann Book",
-        title="Albert Hofmann Book",
-        description="A book about LSD history.",
-        price="€20.00",
-        categories=["books-media"],
-    )
-
+def test_no_restricted_filter_by_default(monkeypatch):
+    monkeypatch.setattr(bot, "RESTRICTED_KEYWORDS", set())
+    product = Product(id="1", name="Anything", title="Anything", description="x", price="$1")
     assert bot._is_restricted_product(product) is False
 
 
-def test_german_extract_category_uses_product_spirit_first():
+def test_restricted_filter_is_config_driven(monkeypatch):
+    monkeypatch.setattr(bot, "RESTRICTED_KEYWORDS", {"gift card"})
+    product = Product(
+        id="1",
+        name="Digital Gift Card",
+        title="Digital Gift Card",
+        description="A redeemable gift card.",
+        price="$25.00",
+    )
+    assert bot._is_restricted_product(product) is True
+
+
+def test_category_is_derived_from_product_taxonomy():
     product = Product(
         id="3",
-        name="Kanna Extract",
-        title="Kanna Extract",
-        description="Botanical extract.",
-        price="€10.00",
-        categories=["Pflanzenextrakt"],
+        name="Canvas Tote",
+        title="Canvas Tote",
+        description="Heavy canvas tote.",
+        price="$24.50",
+        categories=["Bags"],
     )
-
-    assert bot._category_for_product(product) == "botanical-extracts"
-    assert bot._category_label("botanical-extracts", "en") == "🌿 Botanical Extracts"
+    assert bot._category_for_product(product) == "bags"
 
 
-def test_uncategorized_supplement_falls_into_research_extracts():
+def test_uncategorized_product_falls_into_shop_bucket():
     product = Product(
         id="3b",
-        name="Amanita Muscaria Tincture",
-        title="Amanita Muscaria Tincture",
-        description="A liquid supplement extract.",
-        price="€18.00",
+        name="Mystery Item",
+        title="Mystery Item",
+        description="No category here.",
+        price="$10.00",
         categories=["products"],
     )
+    assert bot._category_for_product(product) == "shop"
 
-    assert bot._category_for_product(product) == "research-extracts"
-    assert bot._category_label("research-extracts", "en") == "🧪 Research Extracts"
+
+def test_category_label_falls_back_to_prettified_slug():
+    assert bot._category_label("home-goods") == "🏷️ Home Goods"
 
 
 def test_product_card_text_separates_name_price_description_and_options():
     product = Product(
         id="4",
-        name="CBD Oil - 5% Liquid Extract",
-        title="CBD Oil - 5% Liquid Extract",
-        description="Premium hemp-derived extract designed for everyday balance.",
-        price="€20.00",
+        name="Ceramic Mug - 350ml",
+        title="Ceramic Mug - 350ml",
+        description="Hand-thrown stoneware mug for everyday use.",
+        price="$20.00",
         variant_id="111",
         variants=[
             {
                 "id": "111",
-                "title": "10ml",
-                "price": "€20.00",
+                "title": "350ml",
+                "price": "$20.00",
                 "available": True,
-                "options": ["10ml"],
+                "options": ["350ml"],
             }
         ],
     )
 
     text = bot._product_card_text(product)
 
-    assert text.startswith("<b>CBD Oil - 5% Liquid Extract</b>\n\n")
-    assert "<b>Price</b>\n€20.00" in text
-    assert "<b>Description</b>\nPremium hemp-derived extract" in text
-    assert "<b>Options</b>\n• 10ml — €20.00" in text
+    assert text.startswith("<b>Ceramic Mug - 350ml</b>\n\n")
+    assert "<b>Price</b>\n$20.00" in text
+    assert "<b>Description</b>\nHand-thrown stoneware mug" in text
+    assert "<b>Options</b>\n• 350ml — $20.00" in text

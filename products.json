@@ -3,7 +3,7 @@
     "id": "p1",
     "name": "Minimalist Desk Lamp",
     "title": "Minimalist Desk Lamp",
-    "description": "Elegant LED lamp with adjustable brightness and warm color temperature. Perfect for late-night coding.",
+    "description": "Elegant LED lamp with adjustable brightness and warm color temperature. Perfect for late-night focus.",
     "price": "$89.00",
     "currency": "USD",
     "image": "https://images.unsplash.com/photo-1534073828943-f801091bb18c",
@@ -11,13 +11,18 @@
     "url": "https://example.com/products/lamp",
     "tags": ["lighting", "minimalist", "office"],
     "categories": ["lighting"],
-    "variant_id": "123456789"
+    "category_label": "Lighting",
+    "variant_id": "123456789",
+    "variants": [
+      {"id": "123456789", "title": "Black", "price": "$89.00", "available": true, "options": ["Black"]},
+      {"id": "123456790", "title": "White", "price": "$89.00", "available": true, "options": ["White"]}
+    ]
   },
   {
     "id": "p2",
     "name": "Ergonomic Walnut Stand",
     "title": "Ergonomic Walnut Stand",
-    "description": "Hand-crafted walnut wood laptop stand. Improves posture and reclaim desk space.",
+    "description": "Hand-crafted walnut laptop stand. Improves posture and reclaims desk space.",
     "price": "$120.00",
     "currency": "USD",
     "image": "https://images.unsplash.com/photo-1527443224154-c4a3942d3acf",
@@ -25,6 +30,7 @@
     "url": "https://example.com/products/stand",
     "tags": ["accessories", "wood", "ergonomic"],
     "categories": ["accessories"],
+    "category_label": "Accessories",
     "variant_id": "987654321"
   },
   {
@@ -39,6 +45,7 @@
     "url": "https://example.com/products/keyboard",
     "tags": ["tech", "peripheral", "keyboard"],
     "categories": ["tech"],
+    "category_label": "Tech",
     "variant_id": "456789123"
   }
 ]

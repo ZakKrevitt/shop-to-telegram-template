@@ -1,3 +1,16 @@
+"""
+Best-effort ecommerce scraper for the shop-to-telegram template.
+
+Given any store URL it tries, in order:
+  1. Shopify's public /products.json endpoint (richest data: variants, images, options)
+  2. JSON-LD Product metadata on the page
+  3. OpenGraph product metadata on the page
+
+Categories are derived from the store's own data (Shopify product_type, then
+tags, then JSON-LD category) — never from a hard-coded vertical. This keeps the
+template generic across any kind of shop.
+"""
+
 import argparse
 import json
 import re
@@ -7,6 +20,7 @@ from typing import Any, Iterable, List, Optional
 from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
+
 
 @dataclass
 class Product:
@@ -21,6 +35,7 @@ class Product:
     url: str = ""
     tags: List[str] = field(default_factory=list)
     categories: List[str] = field(default_factory=list)
+    category_label: str = ""
     variant_id: str = ""
     images: List[str] = field(default_factory=list)
     options: List[dict] = field(default_factory=list)
@@ -36,24 +51,17 @@ CURRENCY_SYMBOLS = {
 }
 
 
-CATEGORY_RULES = [
-    ("books-media", "Books & Media", ["book", "buch", "albert hofmann", "lucys", "fear and loathing", "high cuisine", "plant magic", "future is fungi", "mushroom people", "alice", "wonderland", "breaking open the head", "daniel pinchbeck"]),
-    ("cbd-hemp", "CBD & Hemp", ["cbd", "hemp", "hhc", "10hc", "pre-roll", "pot-pourri"]),
-    ("functional-mushrooms", "Functional Mushrooms", ["cordyceps", "shiitake", "lion", "lions mane", "reishi", "chaga", "mushroom extract"]),
-    ("botanical-extracts", "Botanical Extracts", ["kanna", "mulungu", "blue lotus", "rapé", "rape", "kratom", "rockrose"]),
-    ("set-setting", "Set & Setting", ["candle", "pipe", "palo santo", "smudge", "sage", "pine", "set-setting", "home", "incense", "lighting"]),
-    ("research-extracts", "Research Extracts", ["supplement", "extract", "tincture", "tablet", "capsule", "powder", "liquid", "amanita", "mamba", "pflanzenextrakt", "plant extract"]),
-]
-
-
+# Common ecommerce info pages, surfaced in the bot's "Site Sections" menu.
+# Each entry is (display label, [url-substrings to match in the sitemap]).
 SECTION_RULES = [
-    ("About & Philosophy", ["about-us", "ueber-uns"]),
-    ("Set & Setting", ["set-setting"]),
-    ("FAQ", ["faq"]),
-    ("Events", ["events-calendar", "events"]),
-    ("Club", ["club"]),
-    ("Safety Info", ["hazard-and-safety-information"]),
-    ("Contact", ["contact", "kontakt"]),
+    ("About", ["about-us", "about", "our-story", "story"]),
+    ("FAQ", ["faqs", "faq", "help-center", "help"]),
+    ("Shipping", ["shipping", "delivery"]),
+    ("Returns", ["returns", "refund-policy", "refunds", "return-policy"]),
+    ("Contact", ["contact-us", "contact"]),
+    ("Privacy", ["privacy-policy", "privacy"]),
+    ("Terms", ["terms-of-service", "terms-and-conditions", "terms"]),
+    ("Blog", ["blogs/news", "blog", "journal", "news"]),
 ]
 
 
@@ -81,8 +89,14 @@ def _coerce_list(value: Any) -> List[Any]:
 
 
 def _slug(value: str, fallback: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    slug = re.sub(r"[^a-z0-9]+", "-", str(value or "").lower()).strip("-")
     return slug or fallback
+
+
+def _label(value: str, fallback: str = "Shop") -> str:
+    text = re.sub(r"[-_]+", " ", str(value or "").strip())
+    text = re.sub(r"\s+", " ", text).strip()
+    return text.title() if text else fallback
 
 
 def _format_price(amount: Any, currency: str = "USD") -> str:
@@ -98,16 +112,27 @@ def _format_price(amount: Any, currency: str = "USD") -> str:
         return amount_str
 
 
-def infer_product_category(title: str, description: str = "", tags: Optional[List[str]] = None, product_type: str = "") -> str:
-    text = " ".join([title or "", description or "", product_type or "", " ".join(tags or [])]).lower()
-    for slug, _label, keywords in CATEGORY_RULES:
-        if any(keyword in text for keyword in keywords):
-            return slug
-    if product_type:
-        category = _slug(product_type, "products")
-        if category != "products":
-            return category
-    return "research-extracts"
+def infer_product_category(
+    title: str = "",
+    description: str = "",
+    tags: Optional[List[str]] = None,
+    product_type: str = "",
+    fallback_label: str = "Shop",
+) -> tuple:
+    """Return (slug, label) for a product using the store's own taxonomy.
+
+    Preference order: explicit product type, then the first tag, then a single
+    catch-all bucket. No vertical-specific keyword guessing.
+    """
+    if product_type and _slug(product_type, "") not in ("", "products"):
+        return _slug(product_type, "shop"), _label(product_type, fallback_label)
+
+    for tag in tags or []:
+        slug = _slug(tag, "")
+        if slug and slug != "products":
+            return slug, _label(tag, fallback_label)
+
+    return "shop", fallback_label
 
 
 def _absolute_url(base_url: str, value: Any) -> str:
@@ -192,6 +217,7 @@ def parse_jsonld_products(html: str, source_url: str) -> List[Product]:
             product_url = _absolute_url(source_url, offer.get("url") or node.get("url")) or source_url
             image = _first_image(source_url, node.get("image"))
             category = _clean_text(node.get("category"))
+            slug, label = infer_product_category(product_type=category)
             product_id = str(node.get("sku") or node.get("mpn") or _slug(name, f"p{len(products) + 1}"))
 
             products.append(
@@ -206,7 +232,8 @@ def parse_jsonld_products(html: str, source_url: str) -> List[Product]:
                     image_url=image,
                     url=product_url,
                     tags=[tag for tag in [category] if tag],
-                    categories=[category.lower()] if category else ["products"],
+                    categories=[slug],
+                    category_label=label,
                 )
             )
 
@@ -237,7 +264,8 @@ def parse_opengraph_product(html: str, source_url: str) -> List[Product]:
             image=image,
             image_url=image,
             url=product_url,
-            categories=["products"],
+            categories=["shop"],
+            category_label="Shop",
         )
     ]
 
@@ -283,6 +311,7 @@ class ShopScraper:
 
         base_url = f"{parsed.scheme}://{parsed.netloc}"
         currency = self._detect_shopify_currency(base_url)
+        shop_label = _label(parsed.netloc.removeprefix("www.").split(".")[0])
         products_url = urljoin(base_url, "/products.json?limit=250")
 
         response = self.session.get(products_url, timeout=self.timeout)
@@ -348,7 +377,9 @@ class ShopScraper:
                     }
                 )
 
-            category = infer_product_category(title, description, tags, product_type)
+            slug, label = infer_product_category(
+                tags=tags, product_type=product_type, fallback_label=shop_label
+            )
 
             products.append(
                 Product(
@@ -362,7 +393,8 @@ class ShopScraper:
                     image_url=image,
                     url=urljoin(base_url, f"/products/{handle}"),
                     tags=tags,
-                    categories=[category],
+                    categories=[slug],
+                    category_label=label,
                     variant_id=str(variant.get("id") or ""),
                     images=image_urls,
                     options=options,
@@ -414,7 +446,7 @@ def scrape_site_sections(shop_url: str, session: Optional[Any] = None, timeout: 
     section_urls: List[str] = []
     for match in re.findall(r"<loc>(.*?)</loc>", sitemap_response.text):
         loc = match.replace("&amp;", "&")
-        if "sitemap_pages" in loc or "sitemap_collections" in loc:
+        if "sitemap_pages" in loc:
             try:
                 response = session.get(loc, timeout=timeout)
                 response.raise_for_status()
@@ -452,7 +484,7 @@ def load_products(filepath: str) -> List[Product]:
     try:
         with open(filepath, "r") as f:
             data = json.load(f)
-            return [Product(**p) for p in data]
+            return [Product(**{k: v for k, v in p.items() if k in Product.__dataclass_fields__}) for p in data]
     except FileNotFoundError:
         return []
 

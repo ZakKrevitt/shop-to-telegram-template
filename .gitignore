@@ -5,3 +5,4 @@ __pycache__/
 *.py[cod]
 bot_persistence.pickle
 .pytest_cache/
+.venv-t/
