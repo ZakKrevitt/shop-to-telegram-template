@@ -187,6 +187,7 @@ TEXT = {
         "choose_option": "🛒 Choose Option",
         "add_to_cart": "🛒 Add to Cart",
         "sold_out": "Sold Out",
+        "in_stock_only": "📦 In-stock only",
         "view_online": "🌐 View Online",
         "wholesale": "🏢 Wholesale",
         "share": "📤 Share",
@@ -243,6 +244,7 @@ TEXT = {
         "choose_option": "🛒 Option wählen",
         "add_to_cart": "🛒 In den Warenkorb",
         "sold_out": "Ausverkauft",
+        "in_stock_only": "📦 Nur auf Lager",
         "view_online": "🌐 Online ansehen",
         "wholesale": "🏢 Wholesale",
         "share": "📤 Teilen",
@@ -299,6 +301,7 @@ TEXT = {
         "choose_option": "🛒 Elegir opción",
         "add_to_cart": "🛒 Añadir al carrito",
         "sold_out": "Agotado",
+        "in_stock_only": "📦 Solo en stock",
         "view_online": "🌐 Ver en línea",
         "wholesale": "🏢 Mayorista",
         "share": "📤 Compartir",
@@ -355,6 +358,7 @@ TEXT = {
         "choose_option": "🛒 Escolher opção",
         "add_to_cart": "🛒 Adicionar ao carrinho",
         "sold_out": "Esgotado",
+        "in_stock_only": "📦 Apenas em stock",
         "view_online": "🌐 Ver online",
         "wholesale": "🏢 Grossista",
         "share": "📤 Partilhar",
@@ -411,6 +415,7 @@ TEXT = {
         "choose_option": "🛒 Optie kiezen",
         "add_to_cart": "🛒 In winkelwagen",
         "sold_out": "Uitverkocht",
+        "in_stock_only": "📦 Alleen op voorraad",
         "view_online": "🌐 Online bekijken",
         "wholesale": "🏢 Groothandel",
         "share": "📤 Delen",
@@ -616,6 +621,15 @@ def _available_variants(product) -> list:
     return [variant for variant in variants if variant.get("id")]
 
 
+def _is_in_stock(product) -> bool:
+    """In stock if it has at least one available variant. Products with no
+    variant data are treated as in stock (we only hide explicit sold-outs)."""
+    variants = _available_variants(product)
+    if not variants:
+        return True
+    return any(variant.get("available", True) for variant in variants)
+
+
 def _variant_label(variant: dict, language: str = "en") -> str:
     title = variant.get("title") or "Default"
     options = [value for value in variant.get("options", []) if value and value != "Default Title"]
@@ -700,10 +714,8 @@ def _start_text(context: ContextTypes.DEFAULT_TYPE) -> str:
 # ════════════════════════════════════════════════════════════════════
 #  1. MAIN MENU
 # ════════════════════════════════════════════════════════════════════
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    _track_subscriber(update, context)
+def _start_keyboard(context: ContextTypes.DEFAULT_TYPE) -> InlineKeyboardMarkup:
     language = _lang(context)
-    text = _start_text(context)
     kb = []
     cat_items = list(CAT_NAMES.items())
     for i in range(0, len(cat_items), 2):
@@ -715,20 +727,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb.append([InlineKeyboardButton(_t(context, "all_items"), callback_data="cat:all")])
         if _chat_enabled():
             kb.append([InlineKeyboardButton(_t(context, "chat_button"), callback_data="chat_start")])
+        on = bool(context.user_data.get("in_stock_only"))
+        kb.append([InlineKeyboardButton(
+            f"{_t(context, 'in_stock_only')}: {'✅' if on else '⬜️'}", callback_data="stock_toggle")])
         kb.append([
             InlineKeyboardButton(_t(context, "view_cart"), callback_data="cart_show"),
             InlineKeyboardButton(_t(context, "site_sections"), callback_data="sections_show"),
         ])
-    else:
-        text = f"🛍️ *{SHOP_NAME}*\n\n{_t(context, 'empty_catalog')}"
-    if SHOP_BADGES:
-        text = f"{text}\n\n{SHOP_BADGES}"
     if SITE_SECTIONS and not VISIBLE_PRODUCT_INDEXES:
         kb.append([InlineKeyboardButton(_t(context, "site_sections"), callback_data="sections_show")])
     kb.append([InlineKeyboardButton(_t(context, "language"), callback_data="lang_show")])
     if not HAS_RESTRICTED_PRODUCTS:
         kb.append([InlineKeyboardButton(_t(context, "open_store"), url=SHOP_URL)])
-    reply_markup = InlineKeyboardMarkup(kb)
+    return InlineKeyboardMarkup(kb)
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    _track_subscriber(update, context)
+    text = _start_text(context)
+    if not VISIBLE_PRODUCT_INDEXES:
+        text = f"🛍️ *{SHOP_NAME}*\n\n{_t(context, 'empty_catalog')}"
+    if SHOP_BADGES:
+        text = f"{text}\n\n{SHOP_BADGES}"
+    reply_markup = _start_keyboard(context)
     chat_id = update.effective_chat.id
 
     if BANNER_IMG and os.path.exists(BANNER_IMG):
@@ -759,6 +780,9 @@ async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE, cat:
         matching = [(idx, products[idx]) for idx in VISIBLE_PRODUCT_INDEXES]
     else:
         matching = [(idx, products[idx]) for idx in VISIBLE_PRODUCT_INDEXES if _category_for_product(products[idx]) == cat]
+
+    if context.user_data.get("in_stock_only"):
+        matching = [(idx, p) for idx, p in matching if _is_in_stock(p)]
 
     if not matching:
         text = _t(context, "no_items")
@@ -1156,6 +1180,9 @@ async def search_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         result_indexes = _keyword_search(query_text)
 
+    if context.user_data.get("in_stock_only"):
+        result_indexes = [i for i in result_indexes if _is_in_stock(products[i])]
+
     for i in result_indexes:
         await show_product(update, context, i)
 
@@ -1341,6 +1368,16 @@ async def chat_exit(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ════════════════════════════════════════════════════════════════════
 #  12. BUTTON ROUTER
 # ════════════════════════════════════════════════════════════════════
+async def toggle_stock_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Flip the per-shopper in-stock-only filter and refresh the menu in place."""
+    context.user_data["in_stock_only"] = not context.user_data.get("in_stock_only", False)
+    q = update.callback_query
+    try:
+        await q.edit_message_reply_markup(reply_markup=_start_keyboard(context))
+    except Exception:
+        pass
+
+
 async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -1383,6 +1420,8 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_language_settings(update, context)
     elif data.startswith("lang_set:"):
         await set_language(update, context)
+    elif data == "stock_toggle":
+        await toggle_stock_filter(update, context)
     elif data == "noop":
         return
 
